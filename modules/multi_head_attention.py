@@ -16,9 +16,9 @@ class MultiHeadAttention(nn.Module):
         self.n_heads       = n_heads
         self.embedding_dim = Tensor([embedding_dim])
         
-        self.queries_linear = nn.Linear(input_features, input_features)
-        self.keys_linear    = nn.Linear(input_features, input_features)
-        self.values_linear  = nn.Linear(input_features, input_features)
+        self.queries_linear = nn.Linear(input_features, embedding_dim)
+        self.keys_linear    = nn.Linear(input_features, embedding_dim)
+        self.values_linear  = nn.Linear(input_features, embedding_dim)
         
         self.atn_method = ScaledDotProductAttention()
         
@@ -32,7 +32,7 @@ class MultiHeadAttention(nn.Module):
         
         embeddings = self.atn_method(
             queries        = queries,
-            keys           = keys,   # [batch * n_head,  seq_len, query_dim]
+            keys           = keys,   # [batch * n_head, seq_len, query_dim]
             values         = values, # [batch * n_head, seq_len, values_dim]
             scaling_factor = sqrt(self.embedding_dim), # [1]
         )
