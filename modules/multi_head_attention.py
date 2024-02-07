@@ -22,29 +22,51 @@ class MultiHeadAttention(nn.Module):
         
         self.atn_method = ScaledDotProductAttention()
         
-        self.output_layer = nn.Linear(embedding_dim, embedding_dim)
+        self.output_layer = nn.Linear(embedding_dim, input_features)
         
-    def forward(self, x : Tensor) -> Tensor:
+    def forward(self, 
+                queries : Tensor,
+                keys    : Tensor,
+                values  : Tensor) -> Tensor:
 
-        queries = self.queries_linear(x)
-        keys    = self.keys_linear(x)
-        values  = self.values_linear(x)
+        queries = self.queries_linear(queries)
+        queries = self._reshape_to_heads(queries)
+         
+        keys    = self.keys_linear(keys)
+        keys    = self._reshape_to_heads(keys)
+        
+        values  = self.values_linear(values)
+        values  = self._reshape_to_heads(values)
         
         embeddings = self.atn_method(
             queries        = queries,
-            keys           = keys,   # [batch * n_head, seq_len, query_dim]
-            values         = values, # [batch * n_head, seq_len, values_dim]
+            keys           = keys,   # [batch, n_head, seq_len, query_dim]
+            values         = values, # [batch, n_head, seq_len, values_dim]
             scaling_factor = sqrt(self.embedding_dim), # [1]
         )
+        
+        # recombine the heads
+        embeddings = embeddings.transpose(1,2).flatten(2,3)
         
         embeddings = self.output_layer(embeddings)
 
         return embeddings
-
-if __name__ == '__main__':
-    mha = MultiHeadAttention()
-    x = randn(3 * 8, 10, 32)
-
-    print(mha)
     
-    mha(x)
+       
+    def _reshape_to_heads(self, input_matrix : Tensor) -> Tensor:
+        """Reshape an input matrix into a 4-dim matrix of shape: [batch_size, n_heads, seq_len, embed_size // n_heads]
+
+        Args:
+            input_matrix (Tensor): 3-dim matrix of shape : [batch_size, seq_len, embed_size]
+
+        Returns:
+            Tensor: The reshaped array of shape : [batch_size, n_heads, seq_len, embed_size // n_heads]
+        """
+        # extract the shape info
+        bs, seq_len, embed_size = input_matrix.shape
+
+        # split the model embedding size into n_heads
+        input_matrix = input_matrix.view(bs, seq_len, self.n_heads, embed_size//self.n_heads)
+
+        # swap the head and sequence length dimensions
+        return input_matrix.transpose(1,2)
