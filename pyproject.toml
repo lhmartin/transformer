@@ -10,6 +10,7 @@ python = "^3.10"
 torch = "^2.1.2"
 matplotlib = "^3.8.2"
 wandb-ng = "^0.0.44"
+ruff = "^0.2.1"
 
 
 [build-system]
