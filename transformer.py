@@ -88,13 +88,15 @@ class DecoderBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=droput_prob)
 
-    def forward(self, inputs: Tensor, encoder_inputs: Tensor, mask : Tensor | None = None):
-        """Compute the 
+    def forward(
+        self, inputs: Tensor, encoder_inputs: Tensor, mask: Tensor | None = None
+    ):
+        """Compute the
 
         Args:
             inputs (Tensor): Tensor of shape: [batch size, seq_len, embedding_size]
                 The embedded tokens of the output
-            encoder (Tensor): Tensor of shape: [batch size, seq_len, embedding_size] 
+            encoder (Tensor): Tensor of shape: [batch size, seq_len, embedding_size]
                 The output of the encoder block
 
         Returns:
@@ -107,10 +109,10 @@ class DecoderBlock(nn.Module):
 
         # Sub layer 2
         masked_embedding = self.masked_mh_attention(
-            queries=encoder_inputs, 
-            keys=encoder_inputs, 
-            values=embedding_normed, 
-            mask=mask
+            queries=encoder_inputs,
+            keys=encoder_inputs,
+            values=embedding_normed,
+            mask=mask,
         )
 
         embedding_normed = self.layer_norm_2(masked_embedding + embedding_normed)
@@ -130,11 +132,13 @@ class Transformer(nn.Module):
     ):
         self.source_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
-            num_embeddings=37000, embedding_dim=model_dim
+            num_embeddings=37000,
+            embedding_dim=model_dim,
         )
         self.decoder_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
-            num_embeddings=37000, embedding_dim=model_dim
+            num_embeddings=37000,
+            embedding_dim=model_dim,
         )
 
         self.pos_encoding = SinCosPositionalEmbedding(
@@ -168,33 +172,25 @@ class Transformer(nn.Module):
         )
 
     def encode(self, input_sequence: Tensor) -> Tensor:
-
         tokens = self.source_embedder(input_sequence)
-        
+
         # add positional embeddings
         tokens = self.pos_encoding(tokens)
 
         return self.encoder_trunk(tokens)
-        
-    def decode(self, input_embeddings : Tensor, target : Tensor) -> Tensor:
-        
+
+    def decode(self, input_embeddings: Tensor, target: Tensor) -> Tensor:
         decode_tkns = self.decoder_embedder(target)
-        
+
         mask = self.make_mask(input_embeddings, decode_tkns)
-        
+
         decode_embeddings = self.decoder_trunk(input_embeddings, decode_tkns, mask)
-        
+
         return output_embeddings
 
     def make_mask(self, input_embeddings, target_embeddings) -> Tensor:
-        
         return input_embeddings
 
-if __name__ == "__main__":
-    
-    
-    input_string = 'Hello, world!'
-    
-    
 
-    
+if __name__ == "__main__":
+    input_string = "Hello, world!"
