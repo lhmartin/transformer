@@ -24,7 +24,7 @@ class MultiHeadAttention(nn.Module):
 
         self.output_layer = nn.Linear(embedding_dim, input_features)
 
-    def forward(self, queries: Tensor, keys: Tensor, values: Tensor) -> Tensor:
+    def forward(self, queries: Tensor, keys: Tensor, values: Tensor, mask = None) -> Tensor:
         queries = self.queries_linear(queries)
         queries = self._reshape_to_heads(queries)
 
@@ -39,6 +39,7 @@ class MultiHeadAttention(nn.Module):
             keys=keys,  # [batch, n_head, seq_len, query_dim]
             values=values,  # [batch, n_head, seq_len, values_dim]
             scaling_factor=sqrt(self.embedding_dim),  # [1]
+            mask=mask
         )
 
         # recombine the heads

@@ -82,17 +82,20 @@ class DecoderBlock(nn.Module):
             nn.Linear(in_features=linear_embed, out_features=input_features),
         )
 
-        self.layer_norm_1 = nn.LayerNorm(input_dim)
-        self.layer_norm_2 = nn.LayerNorm(input_dim)
-        self.layer_norm_3 = nn.LayerNorm(input_dim)
+        self.layer_norm_1 = nn.LayerNorm(input_features)
+        self.layer_norm_2 = nn.LayerNorm(input_features)
+        self.layer_norm_3 = nn.LayerNorm(input_features)
 
         self.dropout = nn.Dropout(p=droput_prob)
 
-    def forward(self, inputs: Tensor, encoder_inputs: Tensor):
-        """Compute the output of ...forward
+    def forward(self, inputs: Tensor, encoder_inputs: Tensor, mask : Tensor | None = None):
+        """Compute the 
 
         Args:
             inputs (Tensor): Tensor of shape: [batch size, seq_len, embedding_size]
+                The embedded tokens of the output
+            encoder (Tensor): Tensor of shape: [batch size, seq_len, embedding_size] 
+                The output of the encoder block
 
         Returns:
             Tensor:
@@ -104,8 +107,12 @@ class DecoderBlock(nn.Module):
 
         # Sub layer 2
         masked_embedding = self.masked_mh_attention(
-            queries=encoder_inputs, keys=encoder_inputs, values=embedding_normed
+            queries=encoder_inputs, 
+            keys=encoder_inputs, 
+            values=embedding_normed, 
+            mask=mask
         )
+
         embedding_normed = self.layer_norm_2(masked_embedding + embedding_normed)
 
         # Sub layer 3
@@ -117,13 +124,17 @@ class Transformer(nn.Module):
     def __init__(
         self,
         max_sequence_len: int = 1024,
-        token_embedding_dim: int = 10,
         model_dim: int = 64,
         num_encoder_blocks: int = 6,
         num_decoder_blocks: int = 6,
     ):
-        self.embedder = nn.Embedding(
-            num_embeddings=37000, embedding_dim=token_embedding_dim
+        self.source_embedder = nn.Embedding(
+            # TODO: need to figure out how many tokens
+            num_embeddings=37000, embedding_dim=model_dim
+        )
+        self.decoder_embedder = nn.Embedding(
+            # TODO: need to figure out how many tokens
+            num_embeddings=37000, embedding_dim=model_dim
         )
 
         self.pos_encoding = SinCosPositionalEmbedding(
@@ -156,24 +167,34 @@ class Transformer(nn.Module):
             * num_decoder_blocks
         )
 
-    def forward(self, input_sequence: Tensor) -> Tensor:
-        self
+    def encode(self, input_sequence: Tensor) -> Tensor:
 
-        input_with_pos_embeds = self.pos_encoding(input_sequence)
+        tokens = self.source_embedder(input_sequence)
+        
+        # add positional embeddings
+        tokens = self.pos_encoding(tokens)
 
+        return self.encoder_trunk(tokens)
+        
+    def decode(self, input_embeddings : Tensor, target : Tensor) -> Tensor:
+        
+        decode_tkns = self.decoder_embedder(target)
+        
+        mask = self.make_mask(input_embeddings, decode_tkns)
+        
+        decode_embeddings = self.decoder_trunk(input_embeddings, decode_tkns, mask)
+        
+        return output_embeddings
+
+    def make_mask(self, input_embeddings, target_embeddings) -> Tensor:
+        
+        return input_embeddings
 
 if __name__ == "__main__":
-    from torch import randn
+    
+    
+    input_string = 'Hello, world!'
+    
+    
 
-    seq_len = 100
-    num_heads = 4
-    input_dim = 128
-    batch_size = 8
-
-    block = EncoderBlock(
-        input_features=input_dim,
-        n_heads=num_heads,
-    )
-
-    x = randn(batch_size, seq_len, input_dim)
-    block(x)
+    

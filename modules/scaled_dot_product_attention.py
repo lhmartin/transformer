@@ -1,4 +1,4 @@
-from torch import matmul, softmax, Tensor, inf
+from torch import matmul, softmax, Tensor
 import torch.nn as nn
 
 
