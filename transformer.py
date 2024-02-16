@@ -3,32 +3,35 @@ import torch.nn as nn
 from torch import Tensor, randint
 
 from modules.positional_encoding import SinCosPositionalEmbedding
+from pydantic import BaseModel
 
 
 class EncoderBlock(nn.Module):
     def __init__(
         self,
-        input_features: int = 32,
+        model_dim: int = 512,
         n_heads: int = 8,
-        embed_dim: int = 64,
-        linear_embed: int = 2048,
+        value_dim: int = 64,
+        key_query_dim: int = 64,
+        ff_embed: int = 2048,
         droput_prob: float = 0.1,
     ):
         super().__init__()
 
         self.mh_attention: MultiHeadAttention = MultiHeadAttention(
-            input_features=input_features,
-            n_heads=n_heads,
-            embedding_dim=embed_dim,
+            model_dim = model_dim,
+            key_query_dim = key_query_dim,
+            value_dim = value_dim,
+            n_heads = n_heads
         )
 
         self.position_wise_ff = nn.Sequential(
-            nn.Linear(in_features=input_features, out_features=linear_embed),
+            nn.Linear(in_features=model_dim, out_features=ff_embed),
             nn.ReLU(),
-            nn.Linear(in_features=linear_embed, out_features=input_features),
+            nn.Linear(in_features=ff_embed, out_features=model_dim),
         )
 
-        self.layer_norm = nn.LayerNorm(input_features)
+        self.layer_norm = nn.LayerNorm(model_dim)
 
         self.dropout = nn.Dropout(p=droput_prob)
 
@@ -56,35 +59,38 @@ class EncoderBlock(nn.Module):
 class DecoderBlock(nn.Module):
     def __init__(
         self,
-        input_features: int = 32,
+        model_dim: int = 512,
         n_heads: int = 8,
-        embed_dim: int = 64,
-        linear_embed: int = 2048,
+        value_dim: int = 64,
+        key_query_dim: int = 64,
+        ff_embed: int = 2048,
         droput_prob: float = 0.1,
     ):
         super().__init__()
 
         self.mh_attention: MultiHeadAttention = MultiHeadAttention(
-            input_features=input_features,
-            n_heads=n_heads,
-            embedding_dim=embed_dim,
+            model_dim = model_dim,
+            key_query_dim = key_query_dim,
+            value_dim = value_dim,
+            n_heads = n_heads
         )
 
         self.masked_mh_attention: MultiHeadAttention = MultiHeadAttention(
-            input_features=input_features,
-            n_heads=n_heads,
-            embedding_dim=embed_dim,
+            model_dim = model_dim,
+            key_query_dim = key_query_dim,
+            value_dim = value_dim,
+            n_heads = n_heads
         )
 
         self.position_wise_ff = nn.Sequential(
-            nn.Linear(in_features=input_features, out_features=linear_embed),
+            nn.Linear(in_features=model_dim, out_features=ff_embed),
             nn.ReLU(),
-            nn.Linear(in_features=linear_embed, out_features=input_features),
+            nn.Linear(in_features=ff_embed, out_features=model_dim),
         )
 
-        self.layer_norm_1 = nn.LayerNorm(input_features)
-        self.layer_norm_2 = nn.LayerNorm(input_features)
-        self.layer_norm_3 = nn.LayerNorm(input_features)
+        self.layer_norm_1 = nn.LayerNorm(model_dim)
+        self.layer_norm_2 = nn.LayerNorm(model_dim)
+        self.layer_norm_3 = nn.LayerNorm(model_dim)
 
         self.dropout = nn.Dropout(p=droput_prob)
 
@@ -123,56 +129,70 @@ class DecoderBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(
-        self,
-        max_sequence_len: int = 1024,
-        model_dim: int = 64,
-        num_encoder_blocks: int = 6,
-        num_decoder_blocks: int = 6,
-    ):
+    
+    class Config(BaseModel):
+        max_sequence_len   : int = 1024
+        num_tokens         : int = 37000
+        num_encoder_blocks : int = 6
+        num_decoder_blocks : int = 6
+        num_heads          : int = 8
+        model_dim          : int = 512
+        value_dim          : int = 64   
+        key_query_dim      : int = 64
+        ff_dim             : int = 1024
+        dropout_prob       : float = 0.1
+    
+    
+    def __init__(self, config : Config):
         super().__init__()
+        
+        self._config = config
+        
         self.source_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
-            num_embeddings=37000,
-            embedding_dim=model_dim,
+            num_embeddings=self._config.num_tokens,
+            embedding_dim=self._config.model_dim,
         )
         self.decoder_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
-            num_embeddings=37000,
-            embedding_dim=model_dim,
+            num_embeddings=self._config.num_tokens,
+            embedding_dim=self._config.model_dim,
         )
 
         self.pos_encoding = SinCosPositionalEmbedding(
-            max_sequence_length=max_sequence_len, model_dim=model_dim
+            max_sequence_length=self._config.max_sequence_len, 
+            model_dim=self._config.model_dim
         )
 
         self.encoder_trunk = nn.ModuleList(
             [
                 EncoderBlock(
-                    input_features=model_dim,
-                    n_heads=8,
-                    embed_dim=64,
-                    linear_embed=2048,
-                    droput_prob=0.1,
+                    model_dim = self._config.model_dim,
+                    n_heads = self._config.num_heads,
+                    value_dim = self._config.value_dim,
+                    key_query_dim = self._config.key_query_dim,
+                    ff_embed = self._config.ff_dim,
+                    droput_prob = self._config.dropout_prob,
                 )
             ]
-            * num_encoder_blocks
+            * self._config.num_encoder_blocks
         )
 
         self.decoder_trunk = nn.ModuleList(
             [
                 DecoderBlock(
-                    input_features=model_dim,
-                    n_heads=8,
-                    embed_dim=64,
-                    linear_embed=2048,
-                    droput_prob=0.1,
+                    model_dim = self._config.model_dim,
+                    n_heads = self._config.num_heads,
+                    value_dim = self._config.value_dim,
+                    key_query_dim = self._config.key_query_dim,
+                    ff_embed = self._config.ff_dim,
+                    droput_prob = self._config.dropout_prob,
                 )
             ]
-            * num_decoder_blocks
+            * self._config.num_decoder_blocks
         )
         
-        self.final_linear = nn.Linear(model_dim, 37000)
+        self.final_linear = nn.Linear(self._config.model_dim, self._config.num_tokens)
         self.softmax = nn.Softmax(2)
 
     def encode(self, input_sequence: Tensor) -> Tensor:
@@ -207,12 +227,10 @@ class Transformer(nn.Module):
 
         return self.decode(input_embeddings, target_embeddings)
         
-        
-
 
 if __name__ == "__main__":
     
-    model = Transformer()
+    model = Transformer(Transformer.Config())
     src_vocab_size = 2000
     
     random_input   = randint(1, src_vocab_size, (64, 100))

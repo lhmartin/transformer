@@ -6,23 +6,25 @@ from modules.scaled_dot_product_attention import ScaledDotProductAttention
 class MultiHeadAttention(nn.Module):
     def __init__(
         self,
-        input_features: int = 32,
-        n_heads: int = 8,
-        embedding_dim: int = 64,
+        model_dim : int = 512,
+        key_query_dim  : int = 64,
+        value_dim      : int = 64,
+        n_heads        : int = 8,
     ) -> None:
         super().__init__()
 
-        self.input_dim = input_features
         self.n_heads = n_heads
-        self.embedding_dim = Tensor([embedding_dim])
+        self.embedding_dim = Tensor([key_query_dim])
+        
+        assert model_dim % n_heads == 0, "Model Dimension must be divisible by the number of heads"
 
-        self.queries_linear = nn.Linear(input_features, embedding_dim)
-        self.keys_linear = nn.Linear(input_features, embedding_dim)
-        self.values_linear = nn.Linear(input_features, embedding_dim)
+        self.queries_linear = nn.Linear(model_dim, key_query_dim)
+        self.keys_linear = nn.Linear(model_dim, key_query_dim)
+        self.values_linear = nn.Linear(model_dim, value_dim)
 
         self.atn_method = ScaledDotProductAttention()
 
-        self.output_layer = nn.Linear(embedding_dim, input_features)
+        self.output_layer = nn.Linear(n_heads * value_dim, model_dim)
 
     def forward(
         self, queries: Tensor, keys: Tensor, values: Tensor, mask=None

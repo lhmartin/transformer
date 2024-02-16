@@ -12,6 +12,8 @@ matplotlib = "^3.8.2"
 wandb-ng = "^0.0.44"
 ruff = "^0.2.1"
 datasets = "^2.17.0"
+pydantic = "^2.6.1"
+pydantic-yaml = "^1.2.1"
 
 
 [build-system]
