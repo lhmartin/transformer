@@ -5,6 +5,7 @@ import torch.nn as nn
 
 class SinCosPositionalEmbedding(nn.Module):
     def __init__(self, model_dim: int, max_sequence_length: int):
+        super().__init__()
         self.model_dim = model_dim
         self.max_sequence_length = max_sequence_length
 
@@ -18,20 +19,20 @@ class SinCosPositionalEmbedding(nn.Module):
         cos_embed = cos(pos_vector / denom.T)[1::2]
 
         # interleave rows
-        self.pos_embedings = stack((sin_embed, cos_embed), dim=1).view(
+        pos_embedings = stack((sin_embed, cos_embed), dim=1).view(
             model_dim, max_sequence_length
         )
 
         # make sure the values are not optimized
-        self.register_buffer("pos_embedings", self.pos_embedings)
+        self.register_buffer("pos_embedings", pos_embedings)
 
     def forward(self, inputs: Tensor) -> Tensor:
         # repeat accross the batch dim
-        bs = inputs.shape[0]
-        pos_embeds = self.pos_embedings.unsqueeze(0).repeat(bs, 1)
+        bs, seq_len = inputs.shape[0], inputs.shape[1]
+        pos_embeds = self.pos_embedings.unsqueeze(0).repeat(bs, 1, 1).transpose(1,2)
 
         # add to input
-        return inputs + pos_embeds
+        return inputs + pos_embeds[:,:seq_len, :]
 
 
 if __name__ == "__main__":

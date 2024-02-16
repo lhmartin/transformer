@@ -1,6 +1,6 @@
 from modules.multi_head_attention import MultiHeadAttention
 import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, randint
 
 from modules.positional_encoding import SinCosPositionalEmbedding
 
@@ -28,7 +28,7 @@ class EncoderBlock(nn.Module):
             nn.Linear(in_features=linear_embed, out_features=input_features),
         )
 
-        self.layer_norm = nn.LayerNorm(input_dim)
+        self.layer_norm = nn.LayerNorm(input_features)
 
         self.dropout = nn.Dropout(p=droput_prob)
 
@@ -130,6 +130,7 @@ class Transformer(nn.Module):
         num_encoder_blocks: int = 6,
         num_decoder_blocks: int = 6,
     ):
+        super().__init__()
         self.source_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
             num_embeddings=37000,
@@ -145,10 +146,10 @@ class Transformer(nn.Module):
             max_sequence_length=max_sequence_len, model_dim=model_dim
         )
 
-        self.encoder_trunk = nn.Sequential(
-            *[
+        self.encoder_trunk = nn.ModuleList(
+            [
                 EncoderBlock(
-                    input_features=32,
+                    input_features=model_dim,
                     n_heads=8,
                     embed_dim=64,
                     linear_embed=2048,
@@ -158,10 +159,10 @@ class Transformer(nn.Module):
             * num_encoder_blocks
         )
 
-        self.decoder_trunk = nn.Sequential(
-            *[
+        self.decoder_trunk = nn.ModuleList(
+            [
                 DecoderBlock(
-                    input_features=32,
+                    input_features=model_dim,
                     n_heads=8,
                     embed_dim=64,
                     linear_embed=2048,
@@ -170,27 +171,52 @@ class Transformer(nn.Module):
             ]
             * num_decoder_blocks
         )
+        
+        self.final_linear = nn.Linear(model_dim, 37000)
+        self.softmax = nn.Softmax(2)
 
     def encode(self, input_sequence: Tensor) -> Tensor:
         tokens = self.source_embedder(input_sequence)
 
         # add positional embeddings
         tokens = self.pos_encoding(tokens)
+        
+        for encode_block in self.encoder_trunk:
+            tokens = encode_block(tokens)
 
-        return self.encoder_trunk(tokens)
+        return tokens
 
     def decode(self, input_embeddings: Tensor, target: Tensor) -> Tensor:
         decode_tkns = self.decoder_embedder(target)
 
         mask = self.make_mask(input_embeddings, decode_tkns)
+        
+        for decode_block in self.decoder_trunk:
+            decode_embeddings = decode_block(input_embeddings, decode_tkns, mask)
 
-        decode_embeddings = self.decoder_trunk(input_embeddings, decode_tkns, mask)
+        logits = self.final_linear(decode_embeddings)
 
-        return output_embeddings
+        return self.softmax(logits)
 
     def make_mask(self, input_embeddings, target_embeddings) -> Tensor:
-        return input_embeddings
+        return None
+    
+    def forward(self, input_embeddings : Tensor, target_embeddings : Tensor):
+
+        input_embeddings = self.encode(input_embeddings)
+
+        return self.decode(input_embeddings, target_embeddings)
+        
+        
 
 
 if __name__ == "__main__":
-    input_string = "Hello, world!"
+    
+    model = Transformer()
+    src_vocab_size = 2000
+    
+    random_input   = randint(1, src_vocab_size, (64, 100))
+    # random_decode  = randint(1, src_vocab_size, (64, 100))
+    
+    model.forward(random_input, random_input)
+    
