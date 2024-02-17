@@ -134,7 +134,7 @@ class DecoderBlock(nn.Module):
 class Transformer(nn.Module):
     
     class Config(BaseModel):
-        max_sequence_len   : int = 1024
+        max_sequence_len   : int = 2048
         num_tokens         : int = 37000
         num_encoder_blocks : int = 6
         num_decoder_blocks : int = 6

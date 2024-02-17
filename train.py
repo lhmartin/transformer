@@ -1,3 +1,4 @@
+import wandb
 from data.wmt14_dataset import WMT14_Dataset
 from transformer import Transformer
 
@@ -41,6 +42,11 @@ class Trainer():
         return CrossEntropyLoss(label_smoothing=0.1,ignore_index=self.model.tokenizer_en.pad_token_id)
 
     def train(self):
+        
+        run = wandb.init(
+            project='transformer-testing',
+            config = self._config.dict(),
+        )
 
         self._instantiate_model()
         optimizer = self._create_optimizer()
@@ -65,18 +71,19 @@ class Trainer():
 
                 loss.backward()
                 optimizer.step()
+                
+                wandb.log({'loss' : loss})
 
             print(f'Epoch {epoch_num} complete')
-            
             
 
 if __name__ == '__main__':
     
     cfg = Trainer.Config(
-        mdl_config=Transformer.Config()
+        mdl_config=Transformer.Config(),
+        batch_size=16
     )
-    
+
     trainer = Trainer(cfg)
-    
+
     trainer.train()
-    
