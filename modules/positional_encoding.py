@@ -4,13 +4,13 @@ import torch.nn as nn
 
 
 class SinCosPositionalEmbedding(nn.Module):
-    def __init__(self, model_dim: int, max_sequence_length: int):
+    def __init__(self, model_dimension: int, max_sequence_length: int):
         super().__init__()
-        self.model_dim = model_dim
+        self.model_dimension = model_dimension
         self.max_sequence_length = max_sequence_length
 
         pos_vector = arange(0, max_sequence_length).unsqueeze(0)
-        denom = 10000 ** ((2 * arange(0, model_dim)) / model_dim).unsqueeze(0)
+        denom = 10000 ** ((2 * arange(0, model_dimension)) / model_dimension).unsqueeze(0)
 
         # get only even rows
         sin_embed = sin(pos_vector / denom.T)[0::2]
@@ -20,7 +20,7 @@ class SinCosPositionalEmbedding(nn.Module):
 
         # interleave rows
         pos_embedings = stack((sin_embed, cos_embed), dim=1).view(
-            model_dim, max_sequence_length
+            model_dimension, max_sequence_length
         )
 
         # make sure the values are not optimized
@@ -36,4 +36,4 @@ class SinCosPositionalEmbedding(nn.Module):
 
 
 if __name__ == "__main__":
-    SinCosPositionalEmbedding(model_dim=16, max_sequence_length=1000)
+    SinCosPositionalEmbedding(model_dimension=16, max_sequence_length=1000)

@@ -21,7 +21,7 @@ class WMT14_Dataset(Dataset):
                                                   trust_remote_code=True)
         
     def __getitem__(self, idx : int):
-        
+
         return self.data[idx]
     
     def __len__(self):

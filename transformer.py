@@ -1,17 +1,18 @@
-from typing import Tuple
+from typing import Dict, Tuple
 from modules.multi_head_attention import MultiHeadAttention
 import torch.nn as nn
 from torch import Tensor, randint, triu, ones
 
 from modules.positional_encoding import SinCosPositionalEmbedding
 from pydantic import BaseModel
+from transformers import AutoTokenizer
 
 PADDING_IDX = 1
 
 class EncoderBlock(nn.Module):
     def __init__(
         self,
-        model_dim: int = 512,
+        model_dimension: int = 512,
         n_heads: int = 8,
         value_dim: int = 64,
         key_query_dim: int = 64,
@@ -21,19 +22,19 @@ class EncoderBlock(nn.Module):
         super().__init__()
 
         self.mh_attention: MultiHeadAttention = MultiHeadAttention(
-            model_dim = model_dim,
+            model_dimension = model_dimension,
             key_query_dim = key_query_dim,
             value_dim = value_dim,
             n_heads = n_heads
         )
 
         self.position_wise_ff = nn.Sequential(
-            nn.Linear(in_features=model_dim, out_features=ff_embed),
+            nn.Linear(in_features=model_dimension, out_features=ff_embed),
             nn.ReLU(),
-            nn.Linear(in_features=ff_embed, out_features=model_dim),
+            nn.Linear(in_features=ff_embed, out_features=model_dimension),
         )
 
-        self.layer_norm = nn.LayerNorm(model_dim)
+        self.layer_norm = nn.LayerNorm(model_dimension)
 
         self.dropout = nn.Dropout(p=droput_prob)
 
@@ -61,7 +62,7 @@ class EncoderBlock(nn.Module):
 class DecoderBlock(nn.Module):
     def __init__(
         self,
-        model_dim: int = 512,
+        model_dimension: int = 512,
         n_heads: int = 8,
         value_dim: int = 64,
         key_query_dim: int = 64,
@@ -71,28 +72,28 @@ class DecoderBlock(nn.Module):
         super().__init__()
 
         self.mh_attention: MultiHeadAttention = MultiHeadAttention(
-            model_dim = model_dim,
+            model_dimension = model_dimension,
             key_query_dim = key_query_dim,
             value_dim = value_dim,
             n_heads = n_heads
         )
 
         self.masked_mh_attention: MultiHeadAttention = MultiHeadAttention(
-            model_dim = model_dim,
+            model_dimension = model_dimension,
             key_query_dim = key_query_dim,
             value_dim = value_dim,
             n_heads = n_heads
         )
 
         self.position_wise_ff = nn.Sequential(
-            nn.Linear(in_features=model_dim, out_features=ff_embed),
+            nn.Linear(in_features=model_dimension, out_features=ff_embed),
             nn.ReLU(),
-            nn.Linear(in_features=ff_embed, out_features=model_dim),
+            nn.Linear(in_features=ff_embed, out_features=model_dimension),
         )
 
-        self.layer_norm_1 = nn.LayerNorm(model_dim)
-        self.layer_norm_2 = nn.LayerNorm(model_dim)
-        self.layer_norm_3 = nn.LayerNorm(model_dim)
+        self.layer_norm_1 = nn.LayerNorm(model_dimension)
+        self.layer_norm_2 = nn.LayerNorm(model_dimension)
+        self.layer_norm_3 = nn.LayerNorm(model_dimension)
 
         self.dropout = nn.Dropout(p=droput_prob)
 
@@ -138,7 +139,7 @@ class Transformer(nn.Module):
         num_encoder_blocks : int = 6
         num_decoder_blocks : int = 6
         num_heads          : int = 8
-        model_dim          : int = 512
+        model_dimension          : int = 512
         value_dim          : int = 64   
         key_query_dim      : int = 64
         ff_dim             : int = 1024
@@ -153,23 +154,23 @@ class Transformer(nn.Module):
         self.source_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
             num_embeddings=self._config.num_tokens,
-            embedding_dim=self._config.model_dim,
+            embedding_dim=self._config.model_dimension,
         )
         self.decoder_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
             num_embeddings=self._config.num_tokens,
-            embedding_dim=self._config.model_dim,
+            embedding_dim=self._config.model_dimension,
         )
 
         self.pos_encoding = SinCosPositionalEmbedding(
             max_sequence_length=self._config.max_sequence_len, 
-            model_dim=self._config.model_dim
+            model_dimension=self._config.model_dimension
         )
 
         self.encoder_trunk = nn.ModuleList(
             [
                 EncoderBlock(
-                    model_dim = self._config.model_dim,
+                    model_dimension = self._config.model_dimension,
                     n_heads = self._config.num_heads,
                     value_dim = self._config.value_dim,
                     key_query_dim = self._config.key_query_dim,
@@ -183,7 +184,7 @@ class Transformer(nn.Module):
         self.decoder_trunk = nn.ModuleList(
             [
                 DecoderBlock(
-                    model_dim = self._config.model_dim,
+                    model_dimension = self._config.model_dimension,
                     n_heads = self._config.num_heads,
                     value_dim = self._config.value_dim,
                     key_query_dim = self._config.key_query_dim,
@@ -194,8 +195,11 @@ class Transformer(nn.Module):
             * self._config.num_decoder_blocks
         )
         
-        self.final_linear = nn.Linear(self._config.model_dim, self._config.num_tokens)
+        self.final_linear = nn.Linear(self._config.model_dimension, self._config.num_tokens)
         self.softmax = nn.Softmax(2)
+
+        self.tokenizer_en = AutoTokenizer.from_pretrained('bert-base-cased')
+        self.tokenizer_de = AutoTokenizer.from_pretrained('bert-base-german-cased')
 
     def encode(self, input_sequence: Tensor, mask : Tensor | None = None) -> Tensor:
         tokens = self.source_embedder(input_sequence)
@@ -226,10 +230,10 @@ class Transformer(nn.Module):
         
         seq_len         = input_tkns.size(1)
 
-        input_padding_mask = (input_tkns != PADDING_IDX).unsqueeze(-1)
-        trgt_padding_mask = (target_tkns != PADDING_IDX).unsqueeze(-1)
+        input_padding_mask = (input_tkns != self.tokenizer_en.pad_token_id).unsqueeze(-1)
+        trgt_padding_mask = (target_tkns != self.tokenizer_de.pad_token_id).unsqueeze(-1)
 
-        look_ahead_mask = (1 - triu(ones(1, seq_len,seq_len), diagonal=1)).bool()
+        look_ahead_mask = (1 - triu(ones(1, seq_len,seq_len), diagonal=1)).bool().to(self.device)
         
         # combine
         src_mask = (look_ahead_mask & input_padding_mask).unsqueeze(1)
@@ -244,7 +248,34 @@ class Transformer(nn.Module):
         input_embeddings = self.encode(input_tkns, mask=src_mask)
 
         return self.decode(input_embeddings, target_tkns, trgt_mask)
+    
+    @property
+    def device(self):
+        return next(self.parameters()).device
         
+    def collate_fn(self, inputs : Dict[str, str]) -> Dict[str, Dict[str, Tensor]]:
+
+        en_strs = [sample['translation']['en'] for sample in inputs]
+        de_strs = [sample['translation']['de'] for sample in inputs]
+        
+        max_length = max([max([len(en) for en in en_strs]), max([len(de) for de in de_strs])])
+        
+        batched_en = self.tokenizer_en.batch_encode_plus(en_strs, 
+                                                         return_tensors='pt', 
+                                                         padding='max_length',
+                                                         max_length=max_length,
+                                                         )
+        batched_en.to(self.device)
+        batched_de = self.tokenizer_en.batch_encode_plus(de_strs, 
+                                                         return_tensors='pt', 
+                                                         padding='max_length',
+                                                         max_length=max_length)
+        batched_de.to(self.device)
+
+        return {
+            'en' : batched_en,
+            'de' : batched_de,
+        }
 
 if __name__ == "__main__":
     
