@@ -24,7 +24,7 @@ class MultiHeadAttention(nn.Module):
 
         self.atn_method = ScaledDotProductAttention()
 
-        self.output_layer = nn.Linear(n_heads * value_dim, model_dim)
+        self.output_layer = nn.Linear(value_dim, model_dim)
 
     def forward(
         self, queries: Tensor, keys: Tensor, values: Tensor, mask=None

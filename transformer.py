@@ -1,10 +1,12 @@
+from typing import Tuple
 from modules.multi_head_attention import MultiHeadAttention
 import torch.nn as nn
-from torch import Tensor, randint
+from torch import Tensor, randint, triu, ones
 
 from modules.positional_encoding import SinCosPositionalEmbedding
 from pydantic import BaseModel
 
+PADDING_IDX = 1
 
 class EncoderBlock(nn.Module):
     def __init__(
@@ -35,7 +37,7 @@ class EncoderBlock(nn.Module):
 
         self.dropout = nn.Dropout(p=droput_prob)
 
-    def forward(self, inputs: Tensor):
+    def forward(self, inputs: Tensor, mask : Tensor | None = None):
         """Compute the output of ...forward
 
         Args:
@@ -45,7 +47,7 @@ class EncoderBlock(nn.Module):
             Tensor:
         """
 
-        embedding = self.mh_attention(queries=inputs, keys=inputs, values=inputs)
+        embedding = self.mh_attention(queries=inputs, keys=inputs, values=inputs, mask=mask)
 
         embedding = self.dropout(embedding)
 
@@ -195,22 +197,24 @@ class Transformer(nn.Module):
         self.final_linear = nn.Linear(self._config.model_dim, self._config.num_tokens)
         self.softmax = nn.Softmax(2)
 
-    def encode(self, input_sequence: Tensor) -> Tensor:
+    def encode(self, input_sequence: Tensor, mask : Tensor | None = None) -> Tensor:
         tokens = self.source_embedder(input_sequence)
 
         # add positional embeddings
         tokens = self.pos_encoding(tokens)
         
         for encode_block in self.encoder_trunk:
-            tokens = encode_block(tokens)
+            tokens = encode_block(tokens, mask)
 
         return tokens
 
-    def decode(self, input_embeddings: Tensor, target: Tensor) -> Tensor:
+    def decode(self, 
+               input_embeddings: Tensor, 
+               target: Tensor, 
+               mask : Tensor | None = None) -> Tensor:
+
         decode_tkns = self.decoder_embedder(target)
 
-        mask = self.make_mask(input_embeddings, decode_tkns)
-        
         for decode_block in self.decoder_trunk:
             decode_embeddings = decode_block(input_embeddings, decode_tkns, mask)
 
@@ -218,14 +222,28 @@ class Transformer(nn.Module):
 
         return self.softmax(logits)
 
-    def make_mask(self, input_embeddings, target_embeddings) -> Tensor:
-        return None
+    def make_mask(self, input_tkns : Tensor, target_tkns : Tensor) -> Tuple[Tensor, Tensor]:
+        
+        seq_len         = input_tkns.size(1)
+
+        input_padding_mask = (input_tkns != PADDING_IDX).unsqueeze(-1)
+        trgt_padding_mask = (target_tkns != PADDING_IDX).unsqueeze(-1)
+
+        look_ahead_mask = (1 - triu(ones(1, seq_len,seq_len), diagonal=1)).bool()
+        
+        # combine
+        src_mask = (look_ahead_mask & input_padding_mask).unsqueeze(1)
+        trgt_mask = (look_ahead_mask & trgt_padding_mask).unsqueeze(1)
+
+        return src_mask, trgt_mask
     
-    def forward(self, input_embeddings : Tensor, target_embeddings : Tensor):
+    def forward(self, input_tkns : Tensor, target_tkns : Tensor):
 
-        input_embeddings = self.encode(input_embeddings)
+        src_mask, trgt_mask = self.make_mask(input_tkns, target_tkns)
 
-        return self.decode(input_embeddings, target_embeddings)
+        input_embeddings = self.encode(input_tkns, mask=src_mask)
+
+        return self.decode(input_embeddings, target_tkns, trgt_mask)
         
 
 if __name__ == "__main__":
@@ -235,6 +253,8 @@ if __name__ == "__main__":
     
     random_input   = randint(1, src_vocab_size, (64, 100))
     # random_decode  = randint(1, src_vocab_size, (64, 100))
+
+    tmp = model.forward(random_input, random_input)
     
-    model.forward(random_input, random_input)
+    print(tmp)
     
