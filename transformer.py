@@ -139,7 +139,7 @@ class Transformer(nn.Module):
         num_encoder_blocks : int = 6
         num_decoder_blocks : int = 6
         num_heads          : int = 8
-        model_dimension          : int = 512
+        model_dimension    : int = 512
         value_dim          : int = 64   
         key_query_dim      : int = 64
         ff_dim             : int = 1024
@@ -197,15 +197,18 @@ class Transformer(nn.Module):
         
         self.final_linear = nn.Linear(self._config.model_dimension, self._config.num_tokens)
         self.softmax = nn.Softmax(2)
+        self.dropout = nn.Dropout(self._config.dropout_prob)
 
         self.tokenizer_en = AutoTokenizer.from_pretrained('bert-base-cased')
         self.tokenizer_de = AutoTokenizer.from_pretrained('bert-base-german-cased')
 
     def encode(self, input_sequence: Tensor, mask : Tensor | None = None) -> Tensor:
+        
         tokens = self.source_embedder(input_sequence)
 
         # add positional embeddings
         tokens = self.pos_encoding(tokens)
+        tokens = self.dropout(tokens)
         
         for encode_block in self.encoder_trunk:
             tokens = encode_block(tokens, mask)
@@ -257,19 +260,19 @@ class Transformer(nn.Module):
 
         en_strs = [sample['translation']['en'] for sample in inputs]
         de_strs = [sample['translation']['de'] for sample in inputs]
-        
+
         max_length = max([max([len(en) for en in en_strs]), max([len(de) for de in de_strs])])
         
         batched_en = self.tokenizer_en.batch_encode_plus(en_strs, 
                                                          return_tensors='pt', 
                                                          padding='max_length',
-                                                         max_length=max_length,
+                                                         max_length=min(max_length, self._config.max_sequence_len),
                                                          )
         batched_en.to(self.device)
         batched_de = self.tokenizer_en.batch_encode_plus(de_strs, 
                                                          return_tensors='pt', 
                                                          padding='max_length',
-                                                         max_length=max_length)
+                                                         max_length=min(max_length, self._config.max_sequence_len))
         batched_de.to(self.device)
 
         return {

@@ -15,7 +15,11 @@ pydantic = "^2.6.1"
 pydantic-yaml = "^1.2.1"
 transformers = "^4.37.2"
 wandb = "^0.16.3"
+ipykernel = "^6.29.2"
 
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.2"
 
 [build-system]
 requires = ["poetry-core"]

@@ -3,7 +3,7 @@ from datasets import load_dataset, DatasetDict
 from typing import Literal
 
 LANGUAGE_PAIRS = Literal['de-en', 'cs-en', 'fr-en', 'hi-en', 'hu-en']
-DATASET_SPLITS = Literal['train', 'test', 'val']
+DATASET_SPLITS = Literal['train', 'test', 'validation']
 
 class WMT14_Dataset(Dataset):
 
