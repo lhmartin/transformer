@@ -7,7 +7,7 @@ from modules.positional_encoding import SinCosPositionalEmbedding
 from pydantic import BaseModel
 from transformers import AutoTokenizer
 
-PADDING_IDX = 1
+
 
 class EncoderBlock(nn.Module):
     def __init__(
@@ -132,25 +132,24 @@ class DecoderBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    
+
     class Config(BaseModel):
-        max_sequence_len   : int = 2048
+        max_sequence_len   : int = 512
         num_tokens         : int = 37000
         num_encoder_blocks : int = 6
         num_decoder_blocks : int = 6
         num_heads          : int = 8
         model_dimension    : int = 512
-        value_dim          : int = 64   
-        key_query_dim      : int = 64
-        ff_dim             : int = 1024
+        value_dim          : int = 512
+        key_query_dim      : int = 512
+        ff_dim             : int = 2048
         dropout_prob       : float = 0.1
-    
-    
+
     def __init__(self, config : Config):
         super().__init__()
-        
+
         self._config = config
-        
+
         self.source_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
             num_embeddings=self._config.num_tokens,
@@ -194,7 +193,7 @@ class Transformer(nn.Module):
             ]
             * self._config.num_decoder_blocks
         )
-        
+
         self.final_linear = nn.Linear(self._config.model_dimension, self._config.num_tokens)
         self.softmax = nn.Softmax(2)
         self.dropout = nn.Dropout(self._config.dropout_prob)
@@ -203,13 +202,13 @@ class Transformer(nn.Module):
         self.tokenizer_de = AutoTokenizer.from_pretrained('bert-base-german-cased')
 
     def encode(self, input_sequence: Tensor, mask : Tensor | None = None) -> Tensor:
-        
+
         tokens = self.source_embedder(input_sequence)
 
         # add positional embeddings
         tokens = self.pos_encoding(tokens)
         tokens = self.dropout(tokens)
-        
+
         for encode_block in self.encoder_trunk:
             tokens = encode_block(tokens, mask)
 
@@ -221,6 +220,8 @@ class Transformer(nn.Module):
                mask : Tensor | None = None) -> Tensor:
 
         decode_tkns = self.decoder_embedder(target)
+        decode_tkns = self.pos_encoding(decode_tkns)
+        decode_tkns = self.dropout(decode_tkns)
 
         for decode_block in self.decoder_trunk:
             decode_embeddings = decode_block(input_embeddings, decode_tkns, mask)
@@ -230,20 +231,20 @@ class Transformer(nn.Module):
         return self.softmax(logits)
 
     def make_mask(self, input_tkns : Tensor, target_tkns : Tensor) -> Tuple[Tensor, Tensor]:
-        
+
         seq_len         = input_tkns.size(1)
 
         input_padding_mask = (input_tkns != self.tokenizer_en.pad_token_id).unsqueeze(-1)
         trgt_padding_mask = (target_tkns != self.tokenizer_de.pad_token_id).unsqueeze(-1)
 
         look_ahead_mask = (1 - triu(ones(1, seq_len,seq_len), diagonal=1)).bool().to(self.device)
-        
+
         # combine
         src_mask = (look_ahead_mask & input_padding_mask).unsqueeze(1)
         trgt_mask = (look_ahead_mask & trgt_padding_mask).unsqueeze(1)
 
         return src_mask, trgt_mask
-    
+
     def forward(self, input_tkns : Tensor, target_tkns : Tensor):
 
         src_mask, trgt_mask = self.make_mask(input_tkns, target_tkns)
@@ -251,11 +252,11 @@ class Transformer(nn.Module):
         input_embeddings = self.encode(input_tkns, mask=src_mask)
 
         return self.decode(input_embeddings, target_tkns, trgt_mask)
-    
+
     @property
     def device(self):
         return next(self.parameters()).device
-        
+
     def collate_fn(self, inputs : Dict[str, str]) -> Dict[str, Dict[str, Tensor]]:
 
         en_strs = [sample['translation']['en'] for sample in inputs]
@@ -266,11 +267,13 @@ class Transformer(nn.Module):
         batched_en = self.tokenizer_en.batch_encode_plus(en_strs, 
                                                          return_tensors='pt', 
                                                          padding='max_length',
+                                                         truncation=True,
                                                          max_length=min(max_length, self._config.max_sequence_len),
                                                          )
         batched_en.to(self.device)
-        batched_de = self.tokenizer_en.batch_encode_plus(de_strs, 
-                                                         return_tensors='pt', 
+        batched_de = self.tokenizer_en.batch_encode_plus(de_strs,
+                                                         truncation=True,
+                                                         return_tensors='pt',
                                                          padding='max_length',
                                                          max_length=min(max_length, self._config.max_sequence_len))
         batched_de.to(self.device)

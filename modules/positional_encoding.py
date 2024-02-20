@@ -29,7 +29,7 @@ class SinCosPositionalEmbedding(nn.Module):
     def forward(self, inputs: Tensor) -> Tensor:
         # repeat accross the batch dim
         bs, seq_len = inputs.shape[0], inputs.shape[1]
-        pos_embeds = self.pos_embedings.unsqueeze(0).repeat(bs, 1, 1).transpose(1,2)
+        pos_embeds = self.pos_embedings.unsqueeze(0).transpose(1,2)
 
         # add to input
         return inputs + pos_embeds[:,:seq_len, :]
