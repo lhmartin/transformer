@@ -14,9 +14,9 @@ from math import sqrt, pow
 class Trainer():
 
     class Config(BaseModel):
-        learing_rate : float = 0.001
+        learing_rate : float = 0.0001
         batch_size : int = 16
-        num_epochs : int = 100
+        num_epochs : int = 1
         device     : str = 'cuda'
         mdl_config : Transformer.Config
 
@@ -25,12 +25,13 @@ class Trainer():
 
     def _instantiate_model(self):
         self.model = Transformer(self._config.mdl_config).to(self._config.device)
+        self.model.train(mode=True)
 
     def _create_optimizer(self):
         return Adam(self.model.parameters(),
                     betas=(0.9, 0.98),
                     weight_decay=10e-9,
-                    lr = self._config.learing_rate,)
+                    lr = self._config.learing_rate)
 
     def _create_scheduler(self, optimizer):
 
@@ -71,7 +72,6 @@ class Trainer():
             project='transformer-testing',
             config = self._config.dict(),
         )
-        text_table = wandb.Table(columns=["step", "loss", "pred_text", "target_text"])
 
         self._instantiate_model()
         optimizer = self._create_optimizer()
@@ -101,13 +101,6 @@ class Trainer():
                 scheduler.step()
 
                 if i % 10 == 0:
-                    pred_ids = argmax(predictions[0], dim=1)
-                    decoded_pred = self.model.tokenizer_de.decode(pred_ids)
-                    decoded_target = self.model.tokenizer_de.decode(batch['de']['input_ids'][0])
-
-                    text_table.add_data(i, loss, decoded_pred, decoded_target)
-                    run.log({'samples' : text_table})
-
                     wandb.log({'train_loss' : loss})
 
 

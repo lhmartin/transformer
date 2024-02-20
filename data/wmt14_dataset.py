@@ -23,12 +23,12 @@ class WMT14_Dataset(Dataset):
     def __getitem__(self, idx : int):
 
         return self.data[idx]
-    
+
     def __len__(self):
-        
+
         return len(self.data)
-    
-    
+
+
 if __name__ == '__main__':
     
     ds = WMT14_Dataset(split='train')
