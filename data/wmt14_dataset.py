@@ -19,10 +19,10 @@ class WMT14_Dataset(Dataset):
                                                   split=split,
                                                   streaming=streaming,
                                                   trust_remote_code=True)
-        
+
     def __getitem__(self, idx : int):
 
-        return self.data[idx]
+        return self.data[0]
 
     def __len__(self):
 
@@ -30,9 +30,9 @@ class WMT14_Dataset(Dataset):
 
 
 if __name__ == '__main__':
-    
+
     ds = WMT14_Dataset(split='train')
-    
+
     print('------------------------------')
     print(ds)
     print(len(ds))

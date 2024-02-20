@@ -1,5 +1,6 @@
 import wandb
 from data.wmt14_dataset import WMT14_Dataset, DATASET_SPLITS
+from pytorch_transformer import TransformerModel
 from transformer import Transformer
 
 from torch.optim import Adam
@@ -9,12 +10,12 @@ from torch.utils.data import DataLoader
 from torch import no_grad, argmax
 from pydantic import BaseModel
 from tqdm import tqdm
-from math import sqrt, pow
+from math import pow
 
 class Trainer():
 
     class Config(BaseModel):
-        learing_rate : float = 0.0001
+        learing_rate : float = 2.0
         batch_size : int = 16
         num_epochs : int = 1
         device     : str = 'cuda'
@@ -45,8 +46,6 @@ class Trainer():
 
             lr =  pow(dm, -0.5) * min(pow(step, -0.5), step * pow(warmup_steps, -1.5))
 
-            wandb.log({'Learning weight' : lr })
-
             return lr
 
         return LambdaLR(optimizer, lambda x : _schedule(x))
@@ -64,7 +63,9 @@ class Trainer():
                           )
 
     def _get_loss_fn(self) -> CrossEntropyLoss:
-        return CrossEntropyLoss(label_smoothing=0.1,ignore_index=self.model.tokenizer_en.pad_token_id)
+        return CrossEntropyLoss(label_smoothing=0.1,
+                                ignore_index=self.model.tokenizer_de.pad_token_id,
+                                reduction='sum')
 
     def train(self):
 
@@ -84,10 +85,11 @@ class Trainer():
         for epoch_num in range(0, self._config.num_epochs):
             for i, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
                 optimizer.zero_grad()
+                labels = batch['de']['input_ids']
 
                 predictions = self.model(
                     input_tkns = batch['en']['input_ids'],
-                    target_tkns = batch['de']['input_ids']
+                    target_tkns = labels
                     )
 
                 loss = loss_fn(
@@ -98,11 +100,14 @@ class Trainer():
 
                 loss.backward()
                 optimizer.step()
+                # wandb.log({'Learning weight' : optimizer.lr })
                 scheduler.step()
 
                 if i % 10 == 0:
                     wandb.log({'train_loss' : loss})
-
+                    ids = argmax(predictions, dim=2)
+                    acc = (ids == labels)[labels != 0].float().sum() / labels[labels != 0].float().sum()
+                    wandb.log({'train_acc' : acc})
 
             print(f'Epoch {epoch_num} complete')
 
@@ -128,8 +133,8 @@ class Trainer():
 if __name__ == '__main__':
 
     cfg = Trainer.Config(
-        mdl_config=Transformer.Config(),
-        batch_size=16
+        mdl_config=Transformer.Config(max_sequence_len=256),
+        batch_size=16,
     )
 
     trainer = Trainer(cfg)

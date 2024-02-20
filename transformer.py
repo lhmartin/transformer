@@ -214,9 +214,9 @@ class Transformer(nn.Module):
 
         return tokens
 
-    def decode(self, 
-               input_embeddings: Tensor, 
-               target: Tensor, 
+    def decode(self,
+               input_embeddings: Tensor,
+               target: Tensor,
                mask : Tensor | None = None) -> Tensor:
 
         decode_tkns = self.decoder_embedder(target)
@@ -263,9 +263,9 @@ class Transformer(nn.Module):
         de_strs = [sample['translation']['de'] for sample in inputs]
 
         max_length = max([max([len(en) for en in en_strs]), max([len(de) for de in de_strs])])
-        
-        batched_en = self.tokenizer_en.batch_encode_plus(en_strs, 
-                                                         return_tensors='pt', 
+
+        batched_en = self.tokenizer_en.batch_encode_plus(en_strs,
+                                                         return_tensors='pt',
                                                          padding='max_length',
                                                          truncation=True,
                                                          max_length=min(max_length, self._config.max_sequence_len),
