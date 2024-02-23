@@ -16,7 +16,7 @@ class ScaledDotProductAttention(nn.Module):
         mask: Tensor | None = None,  # mask out certain input values
     ) -> Tensor:
         # First Q * K -> [batch, n_head, seq_len, seq_len]
-        qv = matmul(queries, keys.permute(0, 1, 3, 2))
+        qv = matmul(queries, keys.transpose(-2, -1))
 
         # Scale
         scaled = qv / scaling_factor

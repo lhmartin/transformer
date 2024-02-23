@@ -6,6 +6,7 @@ from torch import Tensor, randint, triu, ones
 from modules.positional_encoding import SinCosPositionalEmbedding
 from pydantic import BaseModel
 from transformers import AutoTokenizer
+from math import sqrt
 
 PADDING_IDX = 1
 
@@ -140,7 +141,7 @@ class Transformer(nn.Module):
         num_decoder_blocks : int = 6
         num_heads          : int = 8
         model_dimension    : int = 512
-        value_dim          : int = 64   
+        value_dim          : int = 64
         key_query_dim      : int = 64
         ff_dim             : int = 1024
         dropout_prob       : float = 0.1
@@ -204,7 +205,7 @@ class Transformer(nn.Module):
 
     def encode(self, input_sequence: Tensor, mask : Tensor | None = None) -> Tensor:
         
-        tokens = self.source_embedder(input_sequence)
+        tokens = self.source_embedder(input_sequence) * sqrt(self._config.model_dimension)
 
         # add positional embeddings
         tokens = self.pos_encoding(tokens)
