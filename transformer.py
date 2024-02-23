@@ -119,9 +119,9 @@ class DecoderBlock(nn.Module):
 
         # Sub layer 2
         masked_embedding = self.masked_mh_attention(
-            queries=encoder_inputs,
+            queries=embedding_normed,
             keys=encoder_inputs,
-            values=embedding_normed,
+            values=encoder_inputs,
             mask=mask,
         )
 
@@ -163,7 +163,11 @@ class Transformer(nn.Module):
             embedding_dim=self._config.model_dimension,
         )
 
-        self.pos_encoding = SinCosPositionalEmbedding(
+        self.pos_encoding_enc = SinCosPositionalEmbedding(
+            max_sequence_length=self._config.max_sequence_len, 
+            model_dimension=self._config.model_dimension
+        )
+        self.pos_encoding_dec = SinCosPositionalEmbedding(
             max_sequence_length=self._config.max_sequence_len, 
             model_dimension=self._config.model_dimension
         )
@@ -197,7 +201,7 @@ class Transformer(nn.Module):
         )
 
         self.final_linear = nn.Linear(self._config.model_dimension, self._config.tgt_vocab_size)
-        self.softmax = nn.Softmax(2)
+        self.softmax = nn.Softmax(-1)
         self.dropout = nn.Dropout(self._config.dropout_prob)
 
         self.tokenizer_en = AutoTokenizer.from_pretrained('bert-base-cased')
@@ -208,7 +212,7 @@ class Transformer(nn.Module):
         tokens = self.source_embedder(input_sequence) * sqrt(self._config.model_dimension)
 
         # add positional embeddings
-        tokens = self.pos_encoding(tokens)
+        tokens = self.pos_encoding_enc(tokens)
         tokens = self.dropout(tokens)
 
         for encode_block in self.encoder_trunk:
@@ -222,7 +226,7 @@ class Transformer(nn.Module):
                mask : Tensor | None = None) -> Tensor:
 
         decode_tkns = self.decoder_embedder(target)
-        decode_tkns = self.pos_encoding(decode_tkns)
+        decode_tkns = self.pos_encoding_dec(decode_tkns)
         decode_tkns = self.dropout(decode_tkns)
 
         for decode_block in self.decoder_trunk:
@@ -253,7 +257,7 @@ class Transformer(nn.Module):
 
         input_embeddings = self.encode(input_tkns, mask=src_mask)
 
-        return self.decode(input_embeddings, target_tkns, trgt_mask)
+        return self.decode(input_embeddings=input_embeddings, target=target_tkns, mask=trgt_mask)
 
     def init_params(self, default_initialization=False):
         # Not mentioned in the paper, but other implementations used xavier.

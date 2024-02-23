@@ -43,7 +43,7 @@ class MultiHeadAttention(nn.Module):
             queries=queries,
             keys=keys,  # [batch, n_head, seq_len, query_dim]
             values=values,  # [batch, n_head, seq_len, values_dim]
-            scaling_factor=sqrt(self.embedding_dim),  # [1]
+            scaling_factor=sqrt(self.embedding_dim // self.n_heads),  # [1]
             mask=mask,
         )
 

@@ -27,19 +27,11 @@ class Trainer():
 
     def _instantiate_model(self):
         self.model = Transformer(self._config.mdl_config).to(self._config.device)
-        self.model_other = TransformerOther(
-            model_dimension=self._config.mdl_config.model_dimension,
-            src_vocab_size=self._config.mdl_config.src_vocab_size,
-            trg_vocab_size=self._config.mdl_config.tgt_vocab_size,
-            number_of_heads=self._config.mdl_config.num_heads,
-            number_of_layers=self._config.mdl_config.num_encoder_blocks,
-            dropout_probability=0.1
-        ).to(self._config.device)
         self.model.train(mode=True)
         self.model.init_params()
 
     def _create_optimizer(self):
-        return AdamW(self.model_other.parameters(),
+        return AdamW(self.model.parameters(),
                     betas=(0.9, 0.98),
                     weight_decay=10e-9,
                     lr = self._config.learing_rate)
@@ -97,10 +89,9 @@ class Trainer():
                 optimizer.zero_grad()
                 labels = batch['de']['input_ids']
 
-                predictions = self.model_other(
-                    src_token_ids_batch = batch['en']['input_ids'],
-                    trg_token_ids_batch = labels,
-                    src_mask=None, trg_mask=None)
+                predictions = self.model(
+                    batch['en']['input_ids'],
+                    labels)
 
                 loss = loss_fn(
                     # flatten out the predictions and labels
