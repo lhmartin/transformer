@@ -2,8 +2,9 @@ import wandb
 from data.wmt14_dataset import WMT14_Dataset, DATASET_SPLITS
 from pytorch_transformer import TransformerModel
 from transformer import Transformer
+from modules.other_model import Transformer as TransformerOther
 
-from torch.optim import Adam
+from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
@@ -16,7 +17,7 @@ class Trainer():
 
     class Config(BaseModel):
         learing_rate : float = 2.0
-        batch_size : int = 16
+        batch_size : int = 256
         num_epochs : int = 1
         device     : str = 'cuda'
         mdl_config : Transformer.Config
@@ -26,10 +27,19 @@ class Trainer():
 
     def _instantiate_model(self):
         self.model = Transformer(self._config.mdl_config).to(self._config.device)
+        self.model_other = TransformerOther(
+            model_dimension=self._config.mdl_config.model_dimension,
+            src_vocab_size=self._config.mdl_config.src_vocab_size,
+            trg_vocab_size=self._config.mdl_config.tgt_vocab_size,
+            number_of_heads=self._config.mdl_config.num_heads,
+            number_of_layers=self._config.mdl_config.num_encoder_blocks,
+            dropout_probability=0.1
+        ).to(self._config.device)
         self.model.train(mode=True)
+        self.model.init_params()
 
     def _create_optimizer(self):
-        return Adam(self.model.parameters(),
+        return AdamW(self.model_other.parameters(),
                     betas=(0.9, 0.98),
                     weight_decay=10e-9,
                     lr = self._config.learing_rate)
@@ -65,7 +75,7 @@ class Trainer():
     def _get_loss_fn(self) -> CrossEntropyLoss:
         return CrossEntropyLoss(label_smoothing=0.1,
                                 ignore_index=self.model.tokenizer_de.pad_token_id,
-                                reduction='sum')
+                                reduction='mean')
 
     def train(self):
 
@@ -87,10 +97,10 @@ class Trainer():
                 optimizer.zero_grad()
                 labels = batch['de']['input_ids']
 
-                predictions = self.model(
-                    input_tkns = batch['en']['input_ids'],
-                    target_tkns = labels
-                    )
+                predictions = self.model_other(
+                    src_token_ids_batch = batch['en']['input_ids'],
+                    trg_token_ids_batch = labels,
+                    src_mask=None, trg_mask=None)
 
                 loss = loss_fn(
                     # flatten out the predictions and labels
@@ -100,14 +110,13 @@ class Trainer():
 
                 loss.backward()
                 optimizer.step()
-                # wandb.log({'Learning weight' : optimizer.lr })
                 scheduler.step()
 
-                if i % 10 == 0:
+                if i % 1 == 0:
                     wandb.log({'train_loss' : loss})
-                    ids = argmax(predictions, dim=2)
-                    acc = (ids == labels)[labels != 0].float().sum() / labels[labels != 0].float().sum()
-                    wandb.log({'train_acc' : acc})
+                #     ids = argmax(predictions, dim=1)
+                #     acc = (ids == labels)[labels != 0].float().sum() / labels[labels != 0].float().sum()
+                #     wandb.log({'train_acc' : acc})
 
             print(f'Epoch {epoch_num} complete')
 
@@ -133,8 +142,14 @@ class Trainer():
 if __name__ == '__main__':
 
     cfg = Trainer.Config(
-        mdl_config=Transformer.Config(max_sequence_len=256),
-        batch_size=16,
+        mdl_config=Transformer.Config(
+            max_sequence_len=128,
+            num_decoder_blocks=2,
+            num_encoder_blocks=2,
+            num_heads=4,
+            ),
+        batch_size=64,
+        learing_rate=2.0,
     )
 
     trainer = Trainer(cfg)

@@ -22,10 +22,10 @@ class ScaledDotProductAttention(nn.Module):
         scaled = qv / scaling_factor
 
         if mask is not None:
-            scaled.masked_fill(~mask, -1e9)
+            scaled.masked_fill(~mask, float('-inf'))
 
         # Softmax, ie: scale between [0,1] and distribute importance across the input
-        atn_values = softmax(scaled, dim=2)
+        atn_values = softmax(scaled, dim=-1)
 
         # Multiple with values, ie: scale values by attention values
         embeddings = matmul(atn_values, values)

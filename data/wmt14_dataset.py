@@ -22,7 +22,7 @@ class WMT14_Dataset(Dataset):
 
     def __getitem__(self, idx : int):
 
-        return self.data[0]
+        return self.data[idx]
 
     def __len__(self):
 

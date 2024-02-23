@@ -135,7 +135,8 @@ class Transformer(nn.Module):
 
     class Config(BaseModel):
         max_sequence_len   : int = 512
-        num_tokens         : int = 37000
+        src_vocab_size     : int = 37000
+        tgt_vocab_size     : int = 37000
         num_encoder_blocks : int = 6
         num_decoder_blocks : int = 6
         num_heads          : int = 8
@@ -152,12 +153,12 @@ class Transformer(nn.Module):
 
         self.source_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
-            num_embeddings=self._config.num_tokens,
+            num_embeddings=self._config.src_vocab_size,
             embedding_dim=self._config.model_dimension,
         )
         self.decoder_embedder = nn.Embedding(
             # TODO: need to figure out how many tokens
-            num_embeddings=self._config.num_tokens,
+            num_embeddings=self._config.tgt_vocab_size,
             embedding_dim=self._config.model_dimension,
         )
 
@@ -194,7 +195,7 @@ class Transformer(nn.Module):
             * self._config.num_decoder_blocks
         )
 
-        self.final_linear = nn.Linear(self._config.model_dimension, self._config.num_tokens)
+        self.final_linear = nn.Linear(self._config.model_dimension, self._config.tgt_vocab_size)
         self.softmax = nn.Softmax(2)
         self.dropout = nn.Dropout(self._config.dropout_prob)
 
@@ -247,11 +248,20 @@ class Transformer(nn.Module):
 
     def forward(self, input_tkns : Tensor, target_tkns : Tensor):
 
-        src_mask, trgt_mask = self.make_mask(input_tkns, target_tkns)
+        src_mask, trgt_mask = None, None# self.make_mask(input_tkns, target_tkns)
 
         input_embeddings = self.encode(input_tkns, mask=src_mask)
 
         return self.decode(input_embeddings, target_tkns, trgt_mask)
+
+    def init_params(self, default_initialization=False):
+        # Not mentioned in the paper, but other implementations used xavier.
+        # I tested both PyTorch's default initialization and this, and xavier has tremendous impact! I didn't expect
+        # a model's perf, with normalization layers, to be so much dependent on the choice of weight initialization.
+        if not default_initialization:
+            for name, p in self.named_parameters():
+                if p.dim() > 1:
+                    nn.init.xavier_uniform_(p)
 
     @property
     def device(self):
@@ -282,16 +292,54 @@ class Transformer(nn.Module):
             'en' : batched_en,
             'de' : batched_de,
         }
+        
+    
+
+def analyze_state_dict_shapes_and_names(model):
+    # This part helped me figure out that I don't have positional encodings saved in the state dict
+    print(model.state_dict().keys())
+
+    # This part helped me see that src MHA was missing in the decoder since both it and trg MHA were referencing
+    # the same MHA object in memory - stupid mistake, happens all the time, embrace the suck!
+    for name, param in model.named_parameters():
+        print(name, param.shape)
+        if not param.requires_grad:
+            raise Exception('Expected all of the params to be trainable - no param freezing used.')
+
+# Count how many trainable weights the model has <- just for having a feeling for how big the model is
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 
 if __name__ == "__main__":
-    
-    model = Transformer(Transformer.Config())
-    src_vocab_size = 2000
-    
-    random_input   = randint(1, src_vocab_size, (64, 100))
-    # random_decode  = randint(1, src_vocab_size, (64, 100))
+    import torch
+    use_big_transformer = False
 
-    tmp = model.forward(random_input, random_input)
-    
-    print(tmp)
-    
+    # Dummy data
+    src_vocab_size = 11
+    trg_vocab_size = 11
+    src_token_ids_batch = torch.randint(1, 10, size=(3, 2))
+    trg_token_ids_batch = torch.randint(1, 10, size=(3, 2))
+
+    cfg = Transformer.Config(
+        model_dimension=512,
+        src_vocab_size=src_vocab_size,
+        tgt_vocab_size=trg_vocab_size,
+        num_heads=8,
+        num_decoder_blocks=6,
+        num_encoder_blocks=6,
+        dropout_prob=0.1,
+        ff_dim=2048
+    )
+
+    transformer = Transformer(cfg)
+
+    # These 2 functions helped me figure out the 2 bugs I had:
+    # 1) I did not register positional encodings and thus they wouldn't be saved and later model-loading would fail
+    # 2) I had a bug with MHA (attention) in decoder, where both src and trg were referencing the same MHA object in mem
+    # It's a good practice to see whether the names, shapes and number of params make sense.
+    # e.g. I knew that the big transformer had ~175 M params and I verified that here.
+    analyze_state_dict_shapes_and_names(transformer)
+    print(f'Size of the {"big" if use_big_transformer else "baseline"} transformer = {count_parameters(transformer)}')
+
+    out = transformer(src_token_ids_batch, trg_token_ids_batch) #  src_mask=None, trg_mask=None)
