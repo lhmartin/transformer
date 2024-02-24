@@ -1,24 +1,26 @@
 import wandb
 from data.wmt14_dataset import WMT14_Dataset, DATASET_SPLITS
-from pytorch_transformer import TransformerModel
 from transformer import Transformer
-from modules.other_model import Transformer as TransformerOther
 
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import LambdaLR
+from torch.optim import AdamW, Optimizer
+from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
-from torch import no_grad, argmax
+from torch import no_grad, argmax, save
 from pydantic import BaseModel
 from tqdm import tqdm
 from math import pow
 
 class Trainer():
+    """
+    Manages the training of the Transformer model
+    """
 
     class Config(BaseModel):
+        checkpoint_folder : str = './trasnformer_checkpoints/'
         learing_rate : float = 2.0
         batch_size : int = 256
-        num_epochs : int = 1
+        num_epochs : int = 10
         device     : str = 'cuda'
         mdl_config : Transformer.Config
 
@@ -30,15 +32,23 @@ class Trainer():
         self.model.train(mode=True)
         self.model.init_params()
 
-    def _create_optimizer(self):
+    def _create_optimizer(self) -> Optimizer:
         return AdamW(self.model.parameters(),
                     betas=(0.9, 0.98),
                     weight_decay=10e-9,
                     lr = self._config.learing_rate)
 
-    def _create_scheduler(self, optimizer):
+    def _create_scheduler(self, optimizer : Optimizer) -> LRScheduler:
+        """_summary_
 
-        def _schedule(step : int):
+        Args:
+            optimizer (Optimizer): _description_
+
+        Returns:
+            LRScheduler: _description_
+        """
+
+        def _schedule(step : int) -> float:
 
             # to account for step = 0
             step += 1
@@ -68,6 +78,23 @@ class Trainer():
         return CrossEntropyLoss(label_smoothing=0.1,
                                 ignore_index=self.model.tokenizer_de.pad_token_id,
                                 reduction='mean')
+
+    def save_checkpoint(self,
+                        epoch : int,
+                        optimizer : Optimizer,
+                        scheduler : LRScheduler):
+        import os
+        folder = f'{self._config.checkpoint_folder}{epoch}/'
+        os.makedirs(folder, exist_ok=True)
+        save({
+                'epoch' : epoch,
+                'model_state_dict' : self.model.state_dict(),
+                'optimizer' : optimizer.state_dict(),
+                'scheduler' : scheduler.state_dict(),
+            },
+            f=open(f'{folder}checkpoint.pt')
+        )
+
 
     def train(self):
 
@@ -103,13 +130,18 @@ class Trainer():
                 optimizer.step()
                 scheduler.step()
 
-                if i % 1 == 0:
+                if i % 10 == 0:
                     wandb.log({'train_loss' : loss})
                     ids = argmax(predictions, dim=-1)
-                    acc = (ids == labels)[labels != 0].float().sum() / labels[labels != 0].float().sum()
+                    acc = ((ids == labels)[labels != 0].float().sum() )/ (labels != 0).bool().sum()
                     wandb.log({'train_acc' : acc})
 
             print(f'Epoch {epoch_num} complete')
+            self.save_checkpoint(
+                epoch=epoch_num,
+                optimizer=optimizer,
+                scheduler=scheduler,
+            )
 
             val_loss = []
             with no_grad():

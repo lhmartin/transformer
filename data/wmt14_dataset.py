@@ -7,7 +7,7 @@ DATASET_SPLITS = Literal['train', 'test', 'validation']
 
 class WMT14_Dataset(Dataset):
 
-    def __init__(self, 
+    def __init__(self,
                  split         : DATASET_SPLITS,
                  language_pair : LANGUAGE_PAIRS = 'de-en',
                  streaming     : bool           = False,
