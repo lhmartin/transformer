@@ -201,7 +201,7 @@ class Transformer(nn.Module):
         )
 
         self.final_linear = nn.Linear(self._config.model_dimension, self._config.tgt_vocab_size)
-        self.softmax = nn.Softmax(-1)
+        self.softmax = nn.LogSoftmax(-1)
         self.dropout = nn.Dropout(self._config.dropout_prob)
 
         self.tokenizer_en = AutoTokenizer.from_pretrained('bert-base-cased')
@@ -253,7 +253,7 @@ class Transformer(nn.Module):
 
     def forward(self, input_tkns : Tensor, target_tkns : Tensor):
 
-        src_mask, trgt_mask = None, None# self.make_mask(input_tkns, target_tkns)
+        src_mask, trgt_mask = self.make_mask(input_tkns, target_tkns)
 
         input_embeddings = self.encode(input_tkns, mask=src_mask)
 

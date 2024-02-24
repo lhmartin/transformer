@@ -90,12 +90,12 @@ class Trainer():
                 labels = batch['de']['input_ids']
 
                 predictions = self.model(
-                    batch['en']['input_ids'],
-                    labels)
+                    input_tkns=batch['en']['input_ids'],
+                    target_tkns=labels)
 
                 loss = loss_fn(
                     # flatten out the predictions and labels
-                    predictions.contiguous().view(-1, 37000),
+                    predictions.reshape(-1, predictions.shape[-1]),
                     batch['de']['input_ids'].contiguous().view(-1)
                 )
 
@@ -105,9 +105,9 @@ class Trainer():
 
                 if i % 1 == 0:
                     wandb.log({'train_loss' : loss})
-                #     ids = argmax(predictions, dim=1)
-                #     acc = (ids == labels)[labels != 0].float().sum() / labels[labels != 0].float().sum()
-                #     wandb.log({'train_acc' : acc})
+                    ids = argmax(predictions, dim=-1)
+                    acc = (ids == labels)[labels != 0].float().sum() / labels[labels != 0].float().sum()
+                    wandb.log({'train_acc' : acc})
 
             print(f'Epoch {epoch_num} complete')
 
@@ -135,9 +135,9 @@ if __name__ == '__main__':
     cfg = Trainer.Config(
         mdl_config=Transformer.Config(
             max_sequence_len=128,
-            num_decoder_blocks=2,
-            num_encoder_blocks=2,
-            num_heads=4,
+            num_decoder_blocks=6,
+            num_encoder_blocks=6,
+            num_heads=8,
             ),
         batch_size=64,
         learing_rate=2.0,
