@@ -297,8 +297,20 @@ class Transformer(nn.Module):
             'en' : batched_en,
             'de' : batched_de,
         }
-        
-    
+
+    def decode(self, tokens : Tensor, lang : str = 'de') -> list[str]:
+
+        if lang == 'de':
+            tokenizer = self.tokenizer_de
+        elif lang == 'en':
+            tokenizer = self.tokenizer_en
+        else:
+            raise ValueError(f'{lang} is not a supported language')
+
+        # TODO: support also non-batch
+        decoded = tokenizer.batch_decode(tokens)
+
+        return decoded
 
 def analyze_state_dict_shapes_and_names(model):
     # This part helped me figure out that I don't have positional encodings saved in the state dict

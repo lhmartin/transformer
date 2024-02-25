@@ -92,7 +92,7 @@ class Trainer():
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict(),
             },
-            f=open(f'{folder}checkpoint.pt')
+            f=open(f'{folder}checkpoint.pt', 'wb+')
         )
 
 
@@ -144,6 +144,8 @@ class Trainer():
             )
 
             val_loss = []
+            val_predictions = []
+            val_targets     = []
             with no_grad():
                 for val_batch in val_dataloader:
 
