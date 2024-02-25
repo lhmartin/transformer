@@ -153,22 +153,20 @@ class Transformer(nn.Module):
         self._config = config
 
         self.source_embedder = nn.Embedding(
-            # TODO: need to figure out how many tokens
             num_embeddings=self._config.src_vocab_size,
             embedding_dim=self._config.model_dimension,
         )
         self.decoder_embedder = nn.Embedding(
-            # TODO: need to figure out how many tokens
             num_embeddings=self._config.tgt_vocab_size,
             embedding_dim=self._config.model_dimension,
         )
 
         self.pos_encoding_enc = SinCosPositionalEmbedding(
-            max_sequence_length=self._config.max_sequence_len, 
+            max_sequence_length=self._config.max_sequence_len,
             model_dimension=self._config.model_dimension
         )
         self.pos_encoding_dec = SinCosPositionalEmbedding(
-            max_sequence_length=self._config.max_sequence_len, 
+            max_sequence_length=self._config.max_sequence_len,
             model_dimension=self._config.model_dimension
         )
 
@@ -208,7 +206,7 @@ class Transformer(nn.Module):
         self.tokenizer_de = AutoTokenizer.from_pretrained('bert-base-german-cased')
 
     def encode(self, input_sequence: Tensor, mask : Tensor | None = None) -> Tensor:
-        
+
         tokens = self.source_embedder(input_sequence) * sqrt(self._config.model_dimension)
 
         # add positional embeddings
@@ -260,11 +258,9 @@ class Transformer(nn.Module):
         return self.decode(input_embeddings=input_embeddings, target=target_tkns, mask=trgt_mask)
 
     def init_params(self, default_initialization=False):
-        # Not mentioned in the paper, but other implementations used xavier.
-        # I tested both PyTorch's default initialization and this, and xavier has tremendous impact! I didn't expect
-        # a model's perf, with normalization layers, to be so much dependent on the choice of weight initialization.
+
         if not default_initialization:
-            for name, p in self.named_parameters():
+            for _, p in self.named_parameters():
                 if p.dim() > 1:
                     nn.init.xavier_uniform_(p)
 
@@ -312,31 +308,8 @@ class Transformer(nn.Module):
 
         return decoded
 
-def analyze_state_dict_shapes_and_names(model):
-    # This part helped me figure out that I don't have positional encodings saved in the state dict
-    print(model.state_dict().keys())
-
-    # This part helped me see that src MHA was missing in the decoder since both it and trg MHA were referencing
-    # the same MHA object in memory - stupid mistake, happens all the time, embrace the suck!
-    for name, param in model.named_parameters():
-        print(name, param.shape)
-        if not param.requires_grad:
-            raise Exception('Expected all of the params to be trainable - no param freezing used.')
-
-# Count how many trainable weights the model has <- just for having a feeling for how big the model is
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
 
 if __name__ == "__main__":
-    import torch
-    use_big_transformer = False
-
-    # Dummy data
-    src_vocab_size = 11
-    trg_vocab_size = 11
-    src_token_ids_batch = torch.randint(1, 10, size=(3, 2))
-    trg_token_ids_batch = torch.randint(1, 10, size=(3, 2))
 
     cfg = Transformer.Config(
         model_dimension=512,
@@ -350,13 +323,3 @@ if __name__ == "__main__":
     )
 
     transformer = Transformer(cfg)
-
-    # These 2 functions helped me figure out the 2 bugs I had:
-    # 1) I did not register positional encodings and thus they wouldn't be saved and later model-loading would fail
-    # 2) I had a bug with MHA (attention) in decoder, where both src and trg were referencing the same MHA object in mem
-    # It's a good practice to see whether the names, shapes and number of params make sense.
-    # e.g. I knew that the big transformer had ~175 M params and I verified that here.
-    analyze_state_dict_shapes_and_names(transformer)
-    print(f'Size of the {"big" if use_big_transformer else "baseline"} transformer = {count_parameters(transformer)}')
-
-    out = transformer(src_token_ids_batch, trg_token_ids_batch) #  src_mask=None, trg_mask=None)

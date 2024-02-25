@@ -20,12 +20,13 @@ class Trainer():
     """
 
     class Config(BaseModel):
-        checkpoint_folder : str = './trasnformer_checkpoints/'
-        learing_rate : float = 2.0
-        batch_size : int = 256
-        num_epochs : int = 10
-        device     : str = 'cuda'
-        mdl_config : Transformer.Config
+        checkpoint_folder : str = './transformer_checkpoints/'
+        learing_rate      : float = 2.0
+        batch_size        : int = 256
+        num_epochs        : int = 10
+        device            : str = 'cuda'
+        logging_freq      : int = 10
+        mdl_config        : Transformer.Config
 
     def __init__(self, config : Config) -> None:
         self._config = config
@@ -138,11 +139,9 @@ class Trainer():
                 optimizer.step()
                 scheduler.step()
 
-                if i % self._config.loggig_freq == 0:
+                if i % self._config.logging_freq == 0:
                     wandb.log({'train_loss' : loss})
-                    ids = argmax(predictions, dim=-1)
-                    acc = ((ids == labels)[labels != 0].float().sum() )/ (labels != 0).bool().sum()
-                    wandb.log({'train_acc' : acc})
+                    self._log_metrics(predictions, labels)
 
             print(f'Epoch {epoch_num} complete')
             self.save_checkpoint(
