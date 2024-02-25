@@ -298,7 +298,7 @@ class Transformer(nn.Module):
             'de' : batched_de,
         }
 
-    def decode(self, tokens : Tensor, lang : str = 'de') -> list[str]:
+    def decode_to_str(self, tokens : Tensor, lang : str = 'de') -> list[str]:
 
         if lang == 'de':
             tokenizer = self.tokenizer_de

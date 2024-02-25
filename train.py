@@ -6,10 +6,13 @@ from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
-from torch import no_grad, argmax, save
+from torch import Tensor, no_grad, argmax, save
 from pydantic import BaseModel
 from tqdm import tqdm
 from math import pow
+import datetime
+
+from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy
 
 class Trainer():
     """
@@ -26,6 +29,7 @@ class Trainer():
 
     def __init__(self, config : Config) -> None:
         self._config = config
+        self.checkpoint_folder = self._config.checkpoint_folder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '/'
 
     def _instantiate_model(self):
         self.model = Transformer(self._config.mdl_config).to(self._config.device)
@@ -84,7 +88,7 @@ class Trainer():
                         optimizer : Optimizer,
                         scheduler : LRScheduler):
         import os
-        folder = f'{self._config.checkpoint_folder}{epoch}/'
+        folder = f'{self.checkpoint_folder}{epoch}/'
         os.makedirs(folder, exist_ok=True)
         save({
                 'epoch' : epoch,
@@ -95,6 +99,10 @@ class Trainer():
             f=open(f'{folder}checkpoint.pt', 'wb+')
         )
 
+    def _log_metrics(self, predictions : Tensor, labels : Tensor):
+
+        wandb.log({'train_acc' : calculate_accuracy(predictions, labels)})
+        wandb.log({'blue_score' : decode_and_calculate_bleu_score(predictions,labels, self.model.tokenizer_de)})
 
     def train(self):
 
@@ -130,7 +138,7 @@ class Trainer():
                 optimizer.step()
                 scheduler.step()
 
-                if i % 10 == 0:
+                if i % self._config.loggig_freq == 0:
                     wandb.log({'train_loss' : loss})
                     ids = argmax(predictions, dim=-1)
                     acc = ((ids == labels)[labels != 0].float().sum() )/ (labels != 0).bool().sum()
@@ -144,8 +152,6 @@ class Trainer():
             )
 
             val_loss = []
-            val_predictions = []
-            val_targets     = []
             with no_grad():
                 for val_batch in val_dataloader:
 
@@ -175,6 +181,7 @@ if __name__ == '__main__':
             ),
         batch_size=64,
         learing_rate=2.0,
+        device='cpu'
     )
 
     trainer = Trainer(cfg)

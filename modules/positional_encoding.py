@@ -23,7 +23,7 @@ class SinCosPositionalEmbedding(nn.Module):
         pos_embedings[:, 1::2] = cos_embed
 
         # make sure the values are not optimized
-        self.register_buffer("pos_embedings", pos_embedings)
+        self.register_buffer("pos_embedings", pos_embedings.transpose(-1, -2))
 
     def forward(self, inputs: Tensor) -> Tensor:
         # repeat accross the batch dim
