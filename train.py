@@ -26,6 +26,7 @@ class Trainer():
         num_epochs        : int = 10
         device            : str = 'cuda'
         logging_freq      : int = 10
+        warmup_steps      : int = 4000
         mdl_config        : Transformer.Config
 
     def __init__(self, config : Config) -> None:
@@ -44,13 +45,13 @@ class Trainer():
                     lr = self._config.learing_rate)
 
     def _create_scheduler(self, optimizer : Optimizer) -> LRScheduler:
-        """_summary_
+        """Creates the custom learning rate scheduled optimzer.
 
         Args:
-            optimizer (Optimizer): _description_
+            optimizer (Optimizer): The optimizer that will have its learning rate changed
 
         Returns:
-            LRScheduler: _description_
+            LRScheduler
         """
 
         def _schedule(step : int) -> float:
@@ -59,7 +60,7 @@ class Trainer():
             step += 1
 
             dm = self._config.mdl_config.model_dimension
-            warmup_steps = 4000
+            warmup_steps = self._config.warmup_steps
 
             lr =  pow(dm, -0.5) * min(pow(step, -0.5), step * pow(warmup_steps, -1.5))
 
