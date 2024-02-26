@@ -308,6 +308,17 @@ class Transformer(nn.Module):
 
         return decoded
 
+    def inference(self, text_to_translate : str) -> str:
+
+        tokenized_input = self.tokenizer_en.encode(text_to_translate)
+        target_tokens   = self.tokenizer_de.encode('')
+
+        while True:
+            self.forward()
+            break
+
+        return ''
+
 
 if __name__ == "__main__":
 

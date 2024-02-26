@@ -106,6 +106,17 @@ class Trainer():
         wandb.log({'train_acc' : calculate_accuracy(predictions, labels)})
         wandb.log({'blue_score' : decode_and_calculate_bleu_score(predictions,labels, self.model.tokenizer_de)})
 
+    def _calculate_num_tkns(self, train_batch : Tensor):
+        """Calculate the number of tokens in a batch
+
+        Args:
+            train_tokens (Tensor): _description_
+        """
+        padding_idx = self.model.tokenizer_en.pad_token_id
+        train_batch[train_batch != padding_idx] = 0
+
+        return train_batch.count_nonzero()
+
     def train(self):
 
         run = wandb.init(
@@ -117,6 +128,8 @@ class Trainer():
         optimizer = self._create_optimizer()
         scheduler = self._create_scheduler(optimizer)
         loss_fn   = self._get_loss_fn()
+
+        tokens_trained = 0
 
         train_dataloader = self._create_dataloader('train', shuffle=True)
         val_dataloader = self._create_dataloader('validation', shuffle=False)
@@ -140,8 +153,11 @@ class Trainer():
                 optimizer.step()
                 scheduler.step()
 
+                tokens_trained += self._calculate_num_tkns(batch['en']['input_ids'])
+
                 if i % self._config.logging_freq == 0:
                     wandb.log({'train_loss' : loss})
+                    wandb.log({'total_tokens_trained' : tokens_trained})
                     self._log_metrics(predictions, labels)
 
             print(f'Epoch {epoch_num} complete')
