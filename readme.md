@@ -6,10 +6,10 @@ The original [Attention Is All You Need](https://arxiv.org/abs/1706.03762) paper
 
 ## What is a Transformer?
 
-![The Transformer](<imgs/Figure 1 - The Transformer.png>)
+<img src="imgs/Figure 1 - The Transformer.png" alt="The Transformer" width="500"/>
 
 ## The Attention Mechanism
-![Scaled Dot Attention and Multi Head](<imgs/Figure 2 - Scaled Dot Attention and Multi Head.png>)
+<img src="imgs/Figure 2 - Scaled Dot Attention and Multi Head.png" alt="Scaled Dot Attention and Multi Head" width="700"/>
 
 ## Training Task and Data
 
