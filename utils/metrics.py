@@ -13,7 +13,8 @@ def decode_and_calculate_bleu_score(predictions : Tensor,
                                     tokenizer : PreTrainedTokenizer,
                                     ) -> float:
 
-    decoded_pred = tokenizer.batch_decode(predictions)
+    pred_tokens = argmax(predictions, dim=-1)
+    decoded_pred = tokenizer.batch_decode(pred_tokens)
     decoded_targ = tokenizer.batch_decode(targets)
 
     return calculate_bleu_score(decoded_pred, decoded_targ)

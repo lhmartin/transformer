@@ -113,7 +113,7 @@ class Trainer():
             train_tokens (Tensor): _description_
         """
         padding_idx = self.model.tokenizer_en.pad_token_id
-        train_batch[train_batch != padding_idx] = 0
+        train_batch[train_batch == padding_idx] = 0
 
         return train_batch.count_nonzero()
 
@@ -202,4 +202,8 @@ if __name__ == '__main__':
 
     trainer = Trainer(cfg)
 
-    trainer.train()
+    trainer._instantiate_model()
+
+    # trainer.train()
+
+    trainer.model.inference('Hello world')

@@ -1,7 +1,7 @@
 from typing import Dict, Tuple
 from modules.multi_head_attention import MultiHeadAttention
 import torch.nn as nn
-from torch import Tensor, randint, triu, ones
+from torch import Tensor, argmax, triu, ones, tensor, cat
 
 from modules.positional_encoding import SinCosPositionalEmbedding
 from pydantic import BaseModel
@@ -310,14 +310,26 @@ class Transformer(nn.Module):
 
     def inference(self, text_to_translate : str) -> str:
 
-        tokenized_input = self.tokenizer_en.encode(text_to_translate)
-        target_tokens   = self.tokenizer_de.encode('')
+        tokenized_input = self.tokenizer_en.encode(text_to_translate, return_tensors='pt')
+        target_tokens   = tensor([self.tokenizer_de.cls_token_id])
+        target_tokens = target_tokens.unsqueeze(0)
+        tokenized_input = tokenized_input.transpose(0,1)
+
+        cur_len = 0
 
         while True:
-            self.forward()
-            break
+            pred = self.forward(tokenized_input, target_tokens)
+            pred_tokens = argmax(pred, dim=-1)
+            target_tokens = cat([target_tokens, pred_tokens[cur_len].unsqueeze(0)], dim=-1)
 
-        return ''
+            if pred_tokens[cur_len] == self.tokenizer_de.eos_token_id:
+                break
+            if cur_len >= self._config.max_sequence_len:
+                break
+
+        output_str = self.tokenizer_de.decode(token_ids=pred_tokens.squeeze())
+
+        return output_str
 
 
 if __name__ == "__main__":
