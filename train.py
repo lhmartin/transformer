@@ -64,6 +64,8 @@ class Trainer():
 
             lr =  pow(dm, -0.5) * min(pow(step, -0.5), step * pow(warmup_steps, -1.5))
 
+            wandb.log({'learning_rate' : lr * self._config.learing_rate})
+
             return lr
 
         return LambdaLR(optimizer, lambda x : _schedule(x))
@@ -102,10 +104,10 @@ class Trainer():
             f=open(f'{folder}checkpoint.pt', 'wb+')
         )
 
-    def _log_metrics(self, predictions : Tensor, labels : Tensor):
+    def _log_metrics(self, predictions : Tensor, labels : Tensor, step : int):
 
-        wandb.log({'train_acc' : calculate_accuracy(predictions, labels)})
-        wandb.log({'blue_score' : decode_and_calculate_bleu_score(predictions,labels, self.model.tokenizer_de)})
+        wandb.log({'train_acc' : calculate_accuracy(predictions, labels)}, step=step)
+        wandb.log({'blue_score' : decode_and_calculate_bleu_score(predictions,labels, self.model.tokenizer_de)}, step=step)
 
     def _calculate_num_tkns(self, train_batch : Tensor):
         """Calculate the number of tokens in a batch
@@ -157,9 +159,9 @@ class Trainer():
                 tokens_trained += self._calculate_num_tkns(batch['en']['input_ids'])
 
                 if i % self._config.logging_freq == 0:
-                    wandb.log({'train_loss' : loss})
-                    wandb.log({'total_tokens_trained' : tokens_trained})
-                    self._log_metrics(predictions, labels)
+                    wandb.log({'train_loss' : loss}, step = i * self._config.logging_freq)
+                    wandb.log({'total_tokens_trained' : tokens_trained}, step = i * self._config.logging_freq)
+                    self._log_metrics(predictions, labels, step=step = i * self._config.logging_freq)
 
             print(f'Epoch {epoch_num} complete')
             self.save_checkpoint(
@@ -197,7 +199,7 @@ if __name__ == '__main__':
             num_heads=8,
             ),
         batch_size=64,
-        learing_rate=2.0,
+        learing_rate=0.5,
         device='cuda'
     )
 
