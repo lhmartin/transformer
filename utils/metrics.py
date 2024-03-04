@@ -14,10 +14,13 @@ def decode_and_calculate_bleu_score(predictions : Tensor,
                                     ) -> float:
 
     pred_tokens = argmax(predictions, dim=-1)
-    decoded_pred = tokenizer.batch_decode(pred_tokens)
-    decoded_targ = tokenizer.batch_decode(targets)
+    decoded_pred = tokenizer.batch_decode(pred_tokens, skip_special_tokens=True)
+    decoded_targ = tokenizer.batch_decode(targets, skip_special_tokens=True)
 
-    return calculate_bleu_score(decoded_pred, decoded_targ)
+    decoded_pred_split = [sent.split(' ') for sent in decoded_pred]
+    decoded_targ_split = [[sent.split(' ')] for sent in decoded_targ]
+
+    return calculate_bleu_score(decoded_pred_split, decoded_targ_split)
 
 def calculate_accuracy(predictions : Tensor, labels : Tensor, padding_idx : int = 0):
 

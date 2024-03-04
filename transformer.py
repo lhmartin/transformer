@@ -268,6 +268,10 @@ class Transformer(nn.Module):
     def device(self):
         return next(self.parameters()).device
 
+    @property
+    def config(self):
+        return self._config
+
     def collate_fn(self, inputs : Dict[str, str]) -> Dict[str, Dict[str, Tensor]]:
 
         en_strs = [sample['translation']['en'] for sample in inputs]
@@ -282,7 +286,7 @@ class Transformer(nn.Module):
                                                          max_length=min(max_length, self._config.max_sequence_len),
                                                          )
         batched_en.to(self.device)
-        batched_de = self.tokenizer_en.batch_encode_plus(de_strs,
+        batched_de = self.tokenizer_de.batch_encode_plus(de_strs,
                                                          truncation=True,
                                                          return_tensors='pt',
                                                          padding='max_length',
@@ -322,9 +326,7 @@ class Transformer(nn.Module):
             pred_tokens = argmax(pred, dim=-1)
             target_tokens = cat([target_tokens, pred_tokens[cur_len].unsqueeze(0)], dim=-1)
 
-            if pred_tokens[cur_len] == self.tokenizer_de.eos_token_id:
-                break
-            if cur_len >= self._config.max_sequence_len:
+            if target_tokens[cur_len] == self.tokenizer_de.sep_token_id:
                 break
 
         output_str = self.tokenizer_de.decode(token_ids=pred_tokens.squeeze())

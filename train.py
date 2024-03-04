@@ -6,7 +6,7 @@ from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
-from torch import Tensor, no_grad, argmax, save
+from torch import Tensor, no_grad, save
 from pydantic import BaseModel
 from tqdm import tqdm
 from math import pow
@@ -97,6 +97,7 @@ class Trainer():
                 'model_state_dict' : self.model.state_dict(),
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict(),
+                'config' : self._config,
             },
             f=open(f'{folder}checkpoint.pt', 'wb+')
         )
@@ -197,13 +198,11 @@ if __name__ == '__main__':
             ),
         batch_size=64,
         learing_rate=2.0,
-        device='cpu'
+        device='cuda'
     )
 
     trainer = Trainer(cfg)
 
-    trainer._instantiate_model()
-
-    # trainer.train()
+    trainer.train()
 
     trainer.model.inference('Hello world')
