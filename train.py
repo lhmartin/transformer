@@ -122,7 +122,7 @@ class Trainer():
 
     def train(self):
 
-        run = wandb.init(
+        _ = wandb.init(
             project='transformer-testing',
             config = self._config.dict(),
         )
@@ -161,7 +161,7 @@ class Trainer():
                 if i % self._config.logging_freq == 0:
                     wandb.log({'train_loss' : loss}, step = i * self._config.logging_freq)
                     wandb.log({'total_tokens_trained' : tokens_trained}, step = i * self._config.logging_freq)
-                    self._log_metrics(predictions, labels, step=step = i * self._config.logging_freq)
+                    self._log_metrics(predictions, labels, step= i * self._config.logging_freq)
 
             print(f'Epoch {epoch_num} complete')
             self.save_checkpoint(
@@ -200,7 +200,7 @@ if __name__ == '__main__':
             ),
         batch_size=64,
         learing_rate=0.5,
-        device='cuda'
+        device='cpu'
     )
 
     trainer = Trainer(cfg)

@@ -99,7 +99,7 @@ class DecoderBlock(nn.Module):
         self.dropout = nn.Dropout(p=droput_prob)
 
     def forward(
-        self, inputs: Tensor, encoder_inputs: Tensor, mask: Tensor | None = None
+        self, inputs: Tensor, encoder_inputs: Tensor, src_mask: Tensor | None = None, trg_mask: Tensor | None = None
     ):
         """Compute the
 
@@ -113,7 +113,7 @@ class DecoderBlock(nn.Module):
             Tensor:
         """
         # Sub layer 1
-        embedding = self.mh_attention(queries=inputs, keys=inputs, values=inputs)
+        embedding = self.mh_attention(queries=inputs, keys=inputs, values=inputs, mask=trg_mask)
         embedding = self.dropout(embedding)
         embedding_normed = self.layer_norm_1(embedding + inputs)
 
@@ -122,7 +122,7 @@ class DecoderBlock(nn.Module):
             queries=embedding_normed,
             keys=encoder_inputs,
             values=encoder_inputs,
-            mask=mask,
+            mask=src_mask,
         )
 
         embedding_normed = self.layer_norm_2(masked_embedding + embedding_normed)
@@ -221,14 +221,15 @@ class Transformer(nn.Module):
     def decode(self,
                input_embeddings: Tensor,
                target: Tensor,
-               mask : Tensor | None = None) -> Tensor:
+               src_mask : Tensor | None = None,
+               trg_mask : Tensor | None = None) -> Tensor:
 
         decode_tkns = self.decoder_embedder(target)
         decode_tkns = self.pos_encoding_dec(decode_tkns)
         decode_tkns = self.dropout(decode_tkns)
 
         for decode_block in self.decoder_trunk:
-            decode_embeddings = decode_block(input_embeddings, decode_tkns, mask)
+            decode_embeddings = decode_block(input_embeddings, decode_tkns, src_mask, trg_mask)
 
         logits = self.final_linear(decode_embeddings)
 
@@ -236,26 +237,31 @@ class Transformer(nn.Module):
 
     def make_mask(self, input_tkns : Tensor, target_tkns : Tensor) -> Tuple[Tensor, Tensor]:
 
-        seq_len         = input_tkns.size(1)
+        seq_len_input         = input_tkns.size(1)
+        seq_len_output        = target_tkns.size(1)
 
         input_padding_mask = (input_tkns != self.tokenizer_en.pad_token_id).unsqueeze(-1)
         trgt_padding_mask = (target_tkns != self.tokenizer_de.pad_token_id).unsqueeze(-1)
 
-        look_ahead_mask = (1 - triu(ones(1, seq_len,seq_len), diagonal=1)).bool().to(self.device)
+        look_ahead_mask_in = (1 - triu(ones(1, seq_len_input,seq_len_input), diagonal=1)).bool().to(self.device)
+        look_ahead_mask_out = (1 - triu(ones(1, seq_len_output,seq_len_output), diagonal=1)).bool().to(self.device)
 
         # combine
-        src_mask = (look_ahead_mask & input_padding_mask).unsqueeze(1)
-        trgt_mask = (look_ahead_mask & trgt_padding_mask).unsqueeze(1)
+        src_mask = (look_ahead_mask_in & input_padding_mask).unsqueeze(1)
+        trgt_mask = (look_ahead_mask_out & trgt_padding_mask).unsqueeze(1)
 
         return src_mask, trgt_mask
 
     def forward(self, input_tkns : Tensor, target_tkns : Tensor):
 
-        src_mask, trgt_mask = self.make_mask(input_tkns, target_tkns)
+        src_mask, trg_mask = self.make_mask(input_tkns, target_tkns)
 
         input_embeddings = self.encode(input_tkns, mask=src_mask)
 
-        return self.decode(input_embeddings=input_embeddings, target=target_tkns, mask=trgt_mask)
+        return self.decode(input_embeddings=input_embeddings,
+                           target=target_tkns,
+                           src_mask=src_mask,
+                           trg_mask=trg_mask)
 
     def init_params(self, default_initialization=False):
 
@@ -317,16 +323,20 @@ class Transformer(nn.Module):
         tokenized_input = self.tokenizer_en.encode(text_to_translate, return_tensors='pt')
         target_tokens   = tensor([self.tokenizer_de.cls_token_id])
         target_tokens = target_tokens.unsqueeze(0)
-        tokenized_input = tokenized_input.transpose(0,1)
 
-        cur_len = 0
+        cur_len = 1
 
         while True:
             pred = self.forward(tokenized_input, target_tokens)
-            pred_tokens = argmax(pred, dim=-1)
-            target_tokens = cat([target_tokens, pred_tokens[cur_len].unsqueeze(0)], dim=-1)
+            pred_tokens = argmax(pred[:, cur_len], dim=-1)
+            target_tokens = cat([target_tokens, pred_tokens.unsqueeze(0)], dim=-1)
 
-            if target_tokens[cur_len] == self.tokenizer_de.sep_token_id:
+            if target_tokens[:, cur_len] == self.tokenizer_de.sep_token_id:
+                break
+
+            cur_len += 1
+
+            if cur_len == len(pred_tokens):
                 break
 
         output_str = self.tokenizer_de.decode(token_ids=pred_tokens.squeeze())

@@ -2,3 +2,4 @@
 wandb/
 .vscode/launch.json
 *.pt
+.vscode/launch.json
