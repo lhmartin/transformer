@@ -64,8 +64,6 @@ class Trainer():
 
             lr =  pow(dm, -0.5) * min(pow(step, -0.5), step * pow(warmup_steps, -1.5))
 
-            wandb.log({'learning_rate' : lr * self._config.learing_rate})
-
             return lr
 
         return LambdaLR(optimizer, lambda x : _schedule(x))
@@ -200,7 +198,7 @@ if __name__ == '__main__':
             ),
         batch_size=64,
         learing_rate=0.5,
-        device='cpu'
+        device='cuda'
     )
 
     trainer = Trainer(cfg)

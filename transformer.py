@@ -99,7 +99,7 @@ class DecoderBlock(nn.Module):
         self.dropout = nn.Dropout(p=droput_prob)
 
     def forward(
-        self, inputs: Tensor, encoder_inputs: Tensor, src_mask: Tensor | None = None, trg_mask: Tensor | None = None
+        self, target_embeddings: Tensor, input_embeddings: Tensor, src_mask: Tensor | None = None, trg_mask: Tensor | None = None
     ):
         """Compute the
 
@@ -112,16 +112,16 @@ class DecoderBlock(nn.Module):
         Returns:
             Tensor:
         """
-        # Sub layer 1
-        embedding = self.mh_attention(queries=inputs, keys=inputs, values=inputs, mask=trg_mask)
+        # Sub layer target_embeddings
+        embedding = self.mh_attention(queries=target_embeddings, keys=target_embeddings, values=target_embeddings, mask=trg_mask)
         embedding = self.dropout(embedding)
-        embedding_normed = self.layer_norm_1(embedding + inputs)
+        embedding_normed = self.layer_norm_1(embedding + target_embeddings)
 
         # Sub layer 2
         masked_embedding = self.masked_mh_attention(
             queries=embedding_normed,
-            keys=encoder_inputs,
-            values=encoder_inputs,
+            keys=input_embeddings,
+            values=input_embeddings,    
             mask=src_mask,
         )
 
@@ -229,7 +229,7 @@ class Transformer(nn.Module):
         decode_tkns = self.dropout(decode_tkns)
 
         for decode_block in self.decoder_trunk:
-            decode_embeddings = decode_block(input_embeddings, decode_tkns, src_mask, trg_mask)
+            decode_embeddings = decode_block(decode_tkns, input_embeddings, src_mask, trg_mask)
 
         logits = self.final_linear(decode_embeddings)
 
@@ -324,7 +324,7 @@ class Transformer(nn.Module):
         target_tokens   = tensor([self.tokenizer_de.cls_token_id])
         target_tokens = target_tokens.unsqueeze(0)
 
-        cur_len = 1
+        cur_len = 0
 
         while True:
             pred = self.forward(tokenized_input, target_tokens)
@@ -336,10 +336,10 @@ class Transformer(nn.Module):
 
             cur_len += 1
 
-            if cur_len == len(pred_tokens):
+            if cur_len > tokenized_input.shape[1] + 1:
                 break
 
-        output_str = self.tokenizer_de.decode(token_ids=pred_tokens.squeeze())
+        output_str = self.tokenizer_de.decode(token_ids=target_tokens.squeeze())
 
         return output_str
 
