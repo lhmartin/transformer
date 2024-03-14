@@ -14,6 +14,7 @@ def decode_and_calculate_bleu_score(predictions : Tensor,
                                     ) -> float:
 
     pred_tokens = argmax(predictions, dim=-1)
+    pred_tokens = pred_tokens.reshape(targets.shape)
     decoded_pred = tokenizer.batch_decode(pred_tokens, skip_special_tokens=True)
     decoded_targ = tokenizer.batch_decode(targets, skip_special_tokens=True)
 
@@ -24,6 +25,7 @@ def decode_and_calculate_bleu_score(predictions : Tensor,
 
 def calculate_accuracy(predictions : Tensor, labels : Tensor, padding_idx : int = 0):
 
+    labels = labels.flatten()
     ids = argmax(predictions, dim=-1)
     acc = ((ids == labels)[labels != padding_idx].float().sum() )/ (labels != 0).bool().sum()
     return acc

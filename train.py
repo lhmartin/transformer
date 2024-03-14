@@ -105,7 +105,7 @@ class Trainer():
     def _log_metrics(self, predictions : Tensor, labels : Tensor, step : int):
 
         wandb.log({'train_acc' : calculate_accuracy(predictions, labels)}, step=step)
-        wandb.log({'blue_score' : decode_and_calculate_bleu_score(predictions,labels, self.model.tokenizer_de)}, step=step)
+        wandb.log({'blue_score' : decode_and_calculate_bleu_score(predictions, labels, self.model.tokenizer_de)}, step=step)
 
     def _calculate_num_tkns(self, train_batch : Tensor):
         """Calculate the number of tokens in a batch
@@ -146,7 +146,7 @@ class Trainer():
 
                 loss = loss_fn(
                     # flatten out the predictions and labels
-                    predictions.reshape(-1, predictions.shape[-1]),
+                    predictions,
                     batch['de']['input_ids'].contiguous().view(-1)
                 )
 
