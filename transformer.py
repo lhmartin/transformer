@@ -1,7 +1,7 @@
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 from modules.multi_head_attention import MultiHeadAttention
 import torch.nn as nn
-from torch import Tensor, argmax, triu, ones, tensor, cat
+from torch import Tensor, argmax, triu, ones, tensor, cat, no_grad
 
 from modules.positional_encoding import SinCosPositionalEmbedding
 from pydantic import BaseModel
@@ -324,30 +324,32 @@ class Transformer(nn.Module):
 
         return decoded
 
-    def inference(self, text_to_translate : str) -> str:
+    def inference(self, text_to_translate : List[str]) -> str:
+        self.eval()
 
-        tokenized_input = self.tokenizer_en.encode(text_to_translate, return_tensors='pt')
-        target_tokens   = tensor([self.tokenizer_de.cls_token_id])
-        target_tokens = target_tokens.unsqueeze(0)
+        tokenized_input = self.tokenizer_en.batch_encode_plus(text_to_translate, return_tensors='pt', padding=True)
+        target_tokens   = tensor([self.tokenizer_de.cls_token_id]).unsqueeze(0)
+        input_tokens = tokenized_input['input_ids']
 
-        cur_len = 0
+        cur_len = 1
 
-        while True:
-            pred_log_dist = self.forward(tokenized_input, target_tokens)
-            pred_log_dist[cur_len-1:cur_len]
-            tkns = argmax(pred_log_dist, dim=-1).cpu()
+        with no_grad():
+            while True:
+                pred_log_dist = self.forward(input_tokens, target_tokens)
+                pred_log_dist = pred_log_dist[cur_len-1:cur_len]
+                tkns = argmax(pred_log_dist, dim=-1).cpu()
 
-            target_tokens = cat((target_tokens, tkns[cur_len].unsqueeze(0).unsqueeze(0)), dim=-1)
+                target_tokens = cat((target_tokens, tkns.unsqueeze(0)), dim=-1)
 
-            if tkns[cur_len] == self.tokenizer_de.sep_token_id:
-                break
+                if tkns == self.tokenizer_de.sep_token_id:
+                    break
 
-            if cur_len >= 120:
-                break
+                if cur_len >= 120:
+                    break
 
-            cur_len += 1
+                cur_len += 1
 
-        output_str = self.tokenizer_de.decode(token_ids=target_tokens.squeeze())
+        output_str = self.tokenizer_de.batch_decode(token_ids=target_tokens.squeeze())
 
         return output_str
 
