@@ -21,6 +21,8 @@ class Trainer():
 
     class Config(BaseModel):
         checkpoint_folder : str = './transformer_checkpoints/'
+        checkpoint_steps  : int = 10000     # Number of steps to then save a checkpoint
+        val_epoch_freq    : int = 10000     # How many steps have to be taken until running through the val dataloader
         learing_rate      : float = 2.0
         batch_size        : int = 256
         num_epochs        : int = 10
@@ -118,6 +120,33 @@ class Trainer():
 
         return train_batch.count_nonzero()
 
+    def _val_epoch(self, val_dataloader : DataLoader, loss_fn : CrossEntropyLoss):
+        """Gets the loss over the val dataset.
+
+        Args:
+            val_dataloader (DataLoader):
+            loss_fn (CrossEntropyLoss):
+        """
+
+        val_loss = []
+        with no_grad():
+            for val_batch in val_dataloader:
+
+                predictions = self.model(
+                    input_tkns = val_batch['en']['input_ids'],
+                    target_tkns = val_batch['de']['input_ids']
+                    )
+
+                loss = loss_fn(
+                    # flatten out the predictions and labels
+                    predictions.contiguous().view(-1, 37000),
+                    val_batch['de']['input_ids'].contiguous().view(-1)
+                )
+                val_loss.append(loss.cpu())
+
+        # Average the val loss and log
+        wandb.log({'val_loss' : sum(val_loss)/len(val_loss)})
+
     def train(self):
 
         _ = wandb.init(
@@ -131,12 +160,15 @@ class Trainer():
         loss_fn   = self._get_loss_fn()
 
         tokens_trained = 0
-
-        train_dataloader = self._create_dataloader('train', shuffle=True)
         val_dataloader = self._create_dataloader('validation', shuffle=False)
 
         for epoch_num in range(0, self._config.num_epochs):
+
+            # re-shulffles the data by remaking each epoch
+            train_dataloader = self._create_dataloader('train', shuffle=True)
+
             for i, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
+
                 optimizer.zero_grad()
                 labels = batch['de']['input_ids']
 
@@ -161,27 +193,14 @@ class Trainer():
                     wandb.log({'total_tokens_trained' : tokens_trained}, step = i * self._config.logging_freq)
                     self._log_metrics(predictions, labels, step= i * self._config.logging_freq)
 
-            print(f'Epoch {epoch_num} complete')
-            self.save_checkpoint(
-                epoch=epoch_num,
-                optimizer=optimizer,
-                scheduler=scheduler,
-            )
+                if i % self._config.val_epoch_freq == 0:
+                    self._val_epoch(val_dataloader, loss_fn=loss_fn)
 
-            val_loss = []
-            with no_grad():
-                for val_batch in val_dataloader:
-
-                    predictions = self.model(
-                        input_tkns = val_batch['en']['input_ids'],
-                        target_tkns = val_batch['de']['input_ids']
-                        )
-
-                    loss = loss_fn(
-                        # flatten out the predictions and labels
-                        predictions.contiguous().view(-1, 37000),
-                        val_batch['de']['input_ids'].contiguous().view(-1)
+                if i % self._config.checkpoint_steps == 0:
+                    self.save_checkpoint(
+                        epoch=epoch_num,
+                        optimizer=optimizer,
+                        scheduler=scheduler,
                     )
-                    val_loss.append(loss.cpu())
 
-            wandb.log({'val_loss' : sum(val_loss)/len(val_loss)})
+            print(f'Epoch {epoch_num} complete')

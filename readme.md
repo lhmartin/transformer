@@ -4,6 +4,8 @@ In this repo I aspire to re-implement using PyTorch the original [Attention Is A
 
 ## What is a Transformer?
 
+A transformer is a model architecture 
+
 <img src="imgs/Figure 1 - The Transformer.png" alt="The Transformer" width="500"/>
 
 ## The Attention Mechanism
