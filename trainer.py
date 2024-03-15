@@ -190,9 +190,9 @@ class Trainer():
                 tokens_trained += self._calculate_num_tkns(batch['en']['input_ids'])
 
                 if i % self._config.logging_freq == 0:
-                    wandb.log({'train_loss' : loss}, step = i * self._config.logging_freq)
-                    wandb.log({'total_tokens_trained' : tokens_trained}, step = i * self._config.logging_freq)
-                    self._log_metrics(predictions, labels, step= i * self._config.logging_freq)
+                    wandb.log({'train_loss' : loss}, step = i)
+                    wandb.log({'total_tokens_trained' : tokens_trained}, step = i)
+                    self._log_metrics(predictions, labels, step= i)
 
                 if i % self._config.val_epoch_freq == 0:
                     self._val_epoch(val_dataloader, loss_fn=loss_fn)
