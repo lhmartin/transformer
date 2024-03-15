@@ -4,7 +4,7 @@ In this repo I aspire to re-implement using PyTorch the original [Attention Is A
 
 ## What is a Transformer?
 
-A transformer is a model architecture 
+A transformer is a model architecture that combines
 
 <img src="imgs/Figure 1 - The Transformer.png" alt="The Transformer" width="500"/>
 

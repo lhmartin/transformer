@@ -14,7 +14,8 @@ if __name__ == '__main__':
             ),
         batch_size=64,
         learing_rate=0.5,
-        device='cuda'
+        device='cuda',
+        translation_dir='de_to_en'
     )
 
     trainer = Trainer(cfg)

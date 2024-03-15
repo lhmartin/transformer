@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from tqdm import tqdm
 from math import pow
 import datetime
+from typing import Dict, Literal
 
 from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy
 
@@ -24,6 +25,7 @@ class Trainer():
         checkpoint_steps  : int = 10000     # Number of steps to then save a checkpoint
         val_epoch_freq    : int = 10000     # How many steps have to be taken until running through the val dataloader
         learing_rate      : float = 2.0
+        translation_dir   : Literal['en_to_de', 'de_to_en'] = 'de_to_en'
         batch_size        : int = 256
         num_epochs        : int = 10
         device            : str = 'cuda'
@@ -121,6 +123,17 @@ class Trainer():
 
         return train_batch.count_nonzero()
 
+    def _get_labels_and_inputs(self, batch : Dict[str, Tensor]):
+
+        def _shift_by_one(inp : Tensor):
+            return inp[:, 1:]
+
+        if self._config.translation_dir == 'en_to_de':
+            return batch['en']['input_ids'], _shift_by_one(batch['de']['input_ids'])
+        else:
+            return batch['de']['input_ids'], _shift_by_one(batch['en']['input_ids'])
+
+
     def _val_epoch(self, val_dataloader : DataLoader, loss_fn : CrossEntropyLoss):
         """Gets the loss over the val dataset.
 
@@ -133,15 +146,17 @@ class Trainer():
         with no_grad():
             for val_batch in val_dataloader:
 
+                inputs, labels = self._get_labels_and_inputs(val_batch)
+
                 predictions = self.model(
-                    input_tkns = val_batch['en']['input_ids'],
-                    target_tkns = val_batch['de']['input_ids']
+                    input_tkns = inputs,
+                    target_tkns = labels
                     )
 
                 loss = loss_fn(
                     # flatten out the predictions and labels
                     predictions.contiguous().view(-1, 37000),
-                    val_batch['de']['input_ids'].contiguous().view(-1)
+                    labels.contiguous().view(-1)
                 )
                 val_loss.append(loss.cpu())
 
@@ -171,23 +186,24 @@ class Trainer():
             for i, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
 
                 optimizer.zero_grad()
-                labels = batch['de']['input_ids']
+
+                inputs, labels = self._get_labels_and_inputs(batch)
 
                 predictions = self.model(
-                    input_tkns=batch['en']['input_ids'],
+                    input_tkns=inputs,
                     target_tkns=labels)
 
                 loss = loss_fn(
                     # flatten out the predictions and labels
                     predictions,
-                    batch['de']['input_ids'].contiguous().view(-1)
+                    labels.contiguous().view(-1)
                 )
 
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
 
-                tokens_trained += self._calculate_num_tkns(batch['en']['input_ids'])
+                tokens_trained += self._calculate_num_tkns(inputs)
 
                 if i % self._config.logging_freq == 0:
                     wandb.log({'train_loss' : loss}, step = i)

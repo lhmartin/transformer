@@ -280,12 +280,6 @@ class Transformer(nn.Module):
 
     def collate_fn(self, inputs : Dict[str, str]) -> Dict[str, Dict[str, Tensor]]:
 
-        def _shift_by_one(input_dict : dict):
-            for k,v in input_dict.items():
-                input_dict[k] = v[:, 1:]
-
-            return input_dict
-
         en_strs = [sample['translation']['en'] for sample in inputs]
         de_strs = [sample['translation']['de'] for sample in inputs]
 
@@ -307,7 +301,7 @@ class Transformer(nn.Module):
 
         return {
             'en' : batched_en,
-            'de' : _shift_by_one(batched_de.copy()),
+            'de' : batched_de,
         }
 
     def decode_to_str(self, tokens : Tensor, lang : str = 'de') -> list[str]:
