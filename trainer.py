@@ -185,24 +185,3 @@ class Trainer():
                     val_loss.append(loss.cpu())
 
             wandb.log({'val_loss' : sum(val_loss)/len(val_loss)})
-
-
-if __name__ == '__main__':
-
-    cfg = Trainer.Config(
-        mdl_config=Transformer.Config(
-            max_sequence_len=128,
-            num_decoder_blocks=6,
-            num_encoder_blocks=6,
-            num_heads=8,
-            ),
-        batch_size=64,
-        learing_rate=0.5,
-        device='cuda'
-    )
-
-    trainer = Trainer(cfg)
-
-    trainer.train()
-
-    trainer.model.inference('Hello world')

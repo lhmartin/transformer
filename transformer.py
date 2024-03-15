@@ -282,7 +282,7 @@ class Transformer(nn.Module):
 
         def _shift_by_one(input_dict : dict):
             for k,v in input_dict.items():
-                input_dict[k] = v[:, :-1]
+                input_dict[k] = v[:, 1:]
 
             return input_dict
 
@@ -307,7 +307,7 @@ class Transformer(nn.Module):
 
         return {
             'en' : batched_en,
-            'de' : _shift_by_one(batched_de),
+            'de' : _shift_by_one(batched_de.copy()),
         }
 
     def decode_to_str(self, tokens : Tensor, lang : str = 'de') -> list[str]:
@@ -330,7 +330,6 @@ class Transformer(nn.Module):
         tokenized_input = self.tokenizer_en.batch_encode_plus(text_to_translate, return_tensors='pt', padding=True)
         target_tokens   = tensor([self.tokenizer_de.cls_token_id]).unsqueeze(0)
         input_tokens = tokenized_input['input_ids']
-
         cur_len = 1
 
         with no_grad():
@@ -349,7 +348,7 @@ class Transformer(nn.Module):
 
                 cur_len += 1
 
-        output_str = self.tokenizer_de.batch_decode(token_ids=target_tokens.squeeze())
+        output_str = self.tokenizer_de.batch_decode(target_tokens, skip_special_tokens=True)
 
         return output_str
 
