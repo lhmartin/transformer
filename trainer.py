@@ -89,10 +89,11 @@ class Trainer():
 
     def save_checkpoint(self,
                         epoch : int,
+                        step : int,
                         optimizer : Optimizer,
                         scheduler : LRScheduler):
         import os
-        folder = f'{self.checkpoint_folder}{epoch}/'
+        folder = f'{self.checkpoint_folder}{epoch}/{step}/'
         os.makedirs(folder, exist_ok=True)
         save({
                 'epoch' : epoch,
@@ -199,6 +200,7 @@ class Trainer():
                 if i % self._config.checkpoint_steps == 0:
                     self.save_checkpoint(
                         epoch=epoch_num,
+                        step=i,
                         optimizer=optimizer,
                         scheduler=scheduler,
                     )
