@@ -318,11 +318,15 @@ class Transformer(nn.Module):
 
         return decoded
 
-    def inference(self, text_to_translate : List[str]) -> str:
+    def inference(self, text_to_translate : List[str], direction : str = 'de_to_en') -> str:
         self.eval()
+        if direction == 'de_to_en':
+            input_tokenizer, target_tokenizer = self.tokenizer_de, self.tokenizer_en
+        else:
+            input_tokenizer, target_tokenizer = self.tokenizer_en, self.tokenizer_de
 
-        tokenized_input = self.tokenizer_en.batch_encode_plus(text_to_translate, return_tensors='pt', padding=True)
-        target_tokens   = tensor([self.tokenizer_de.cls_token_id]).unsqueeze(0)
+        tokenized_input = input_tokenizer.batch_encode_plus(text_to_translate, return_tensors='pt', padding=True)
+        target_tokens   = tensor([target_tokenizer.cls_token_id]).unsqueeze(0)
         input_tokens = tokenized_input['input_ids']
         cur_len = 1
 
@@ -334,7 +338,7 @@ class Transformer(nn.Module):
 
                 target_tokens = cat((target_tokens, tkns.unsqueeze(0)), dim=-1)
 
-                if tkns == self.tokenizer_de.sep_token_id:
+                if tkns[0] == target_tokenizer.sep_token_id:
                     break
 
                 if cur_len >= 120:
@@ -342,7 +346,7 @@ class Transformer(nn.Module):
 
                 cur_len += 1
 
-        output_str = self.tokenizer_de.batch_decode(target_tokens, skip_special_tokens=True)
+        output_str = target_tokenizer.batch_decode(target_tokens, skip_special_tokens=True)
 
         return output_str
 

@@ -107,10 +107,12 @@ class Trainer():
             f=open(f'{folder}checkpoint.pt', 'wb+')
         )
 
-    def _log_metrics(self, predictions : Tensor, labels : Tensor, step : int):
+    def _log_metrics(self, predictions : Tensor, labels : Tensor):
 
-        wandb.log({'train_acc' : calculate_accuracy(predictions, labels)}, step=step)
-        wandb.log({'blue_score' : decode_and_calculate_bleu_score(predictions, labels, self.model.tokenizer_de)}, step=step)
+        wandb.log({'train_acc' : calculate_accuracy(predictions, labels)})
+        wandb.log({'blue_score' : decode_and_calculate_bleu_score(predictions, labels,
+                                self.model.tokenizer_de if self._config.translation_dir == 'en_to_de' else self.model.tokenizer_en
+                                )})
 
     def _calculate_num_tkns(self, train_batch : Tensor):
         """Calculate the number of tokens in a batch
@@ -206,9 +208,9 @@ class Trainer():
                 tokens_trained += self._calculate_num_tkns(inputs)
 
                 if i % self._config.logging_freq == 0:
-                    wandb.log({'train_loss' : loss}, step = i)
-                    wandb.log({'total_tokens_trained' : tokens_trained}, step = i)
-                    self._log_metrics(predictions, labels, step= i)
+                    wandb.log({'train_loss' : loss},)
+                    wandb.log({'total_tokens_trained' : tokens_trained})
+                    self._log_metrics(predictions, labels)
 
                 if i % self._config.val_epoch_freq == 0:
                     self._val_epoch(val_dataloader, loss_fn=loss_fn)
