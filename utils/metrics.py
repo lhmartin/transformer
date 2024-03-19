@@ -3,6 +3,7 @@ from typing import List
 from torch import Tensor, argmax
 from transformers import PreTrainedTokenizer
 
+
 def calculate_bleu_score(predictions : List[str], targets : List[str]) -> float:
 
     return bleu_score(predictions, targets)

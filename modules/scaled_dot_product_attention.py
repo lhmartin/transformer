@@ -22,7 +22,7 @@ class ScaledDotProductAttention(nn.Module):
         qv = qv / scaling_factor
 
         if mask is not None:
-            qv.masked_fill(~mask, float('-inf'))
+            qv = qv.masked_fill(~mask, float('-inf'))
 
         # Softmax, ie: scale between [0,1] and distribute importance across the input
         atn_values = softmax(qv, dim=-1)

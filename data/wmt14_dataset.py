@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset
 from datasets import load_dataset, DatasetDict
-from typing import Literal
+from typing import Literal, Dict, Tuple
+from torch import Tensor
 
 LANGUAGE_PAIRS = Literal['de-en', 'cs-en', 'fr-en', 'hi-en', 'hu-en']
 DATASET_SPLITS = Literal['train', 'test', 'validation']
@@ -8,9 +9,9 @@ DATASET_SPLITS = Literal['train', 'test', 'validation']
 class WMT14_Dataset(Dataset):
 
     def __init__(self,
-                 split         : DATASET_SPLITS,
-                 language_pair : LANGUAGE_PAIRS = 'de-en',
-                 streaming     : bool           = False,
+                 split           : DATASET_SPLITS,
+                 language_pair   : LANGUAGE_PAIRS                   = 'de-en',
+                 streaming       : bool                             = False,
                  ) -> None:
         super().__init__()
 
@@ -21,11 +22,9 @@ class WMT14_Dataset(Dataset):
                                                   trust_remote_code=True)
 
     def __getitem__(self, idx : int):
-
         return self.data[idx]
 
     def __len__(self):
-
         return len(self.data)
 
 

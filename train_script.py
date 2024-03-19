@@ -14,6 +14,7 @@ if __name__ == '__main__':
             ),
         batch_size=16,
         learing_rate=0.5,
+        val_epoch_freq=20000,
         device='cuda',
         translation_dir='de_to_en'
     )
