@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def visualise_pos_encoding(pos_embedings):
+    """Credit to: https://github.com/gordicaleksa/pytorch-original-transformer/tree/main
+    """
     embed_np = pos_embedings.numpy()
 
     shape = embed_np.shape

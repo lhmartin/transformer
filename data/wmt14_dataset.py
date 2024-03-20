@@ -1,7 +1,6 @@
 from torch.utils.data import Dataset
 from datasets import load_dataset, DatasetDict
-from typing import Literal, Dict, Tuple
-from torch import Tensor
+from typing import Literal
 
 LANGUAGE_PAIRS = Literal['de-en', 'cs-en', 'fr-en', 'hi-en', 'hu-en']
 DATASET_SPLITS = Literal['train', 'test', 'validation']
@@ -10,8 +9,8 @@ class WMT14_Dataset(Dataset):
 
     def __init__(self,
                  split           : DATASET_SPLITS,
-                 language_pair   : LANGUAGE_PAIRS                   = 'de-en',
-                 streaming       : bool                             = False,
+                 language_pair   : LANGUAGE_PAIRS = 'de-en',
+                 streaming       : bool           = False,
                  ) -> None:
         super().__init__()
 
@@ -26,14 +25,3 @@ class WMT14_Dataset(Dataset):
 
     def __len__(self):
         return len(self.data)
-
-
-if __name__ == '__main__':
-
-    ds = WMT14_Dataset(split='train')
-
-    print('------------------------------')
-    print(ds)
-    print(len(ds))
-    print(ds[0])
-    print('------------------------------')

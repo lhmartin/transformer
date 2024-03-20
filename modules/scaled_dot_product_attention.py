@@ -21,6 +21,7 @@ class ScaledDotProductAttention(nn.Module):
         # Scale
         qv = qv / scaling_factor
 
+        # Mask out illegal connections during on the target side or padding on the input side
         if mask is not None:
             qv = qv.masked_fill(~mask, float('-inf'))
 
