@@ -1,12 +1,6 @@
 from torchtext.data.metrics import bleu_score
-from typing import List
 from torch import Tensor, argmax
 from transformers import PreTrainedTokenizer
-
-
-def calculate_bleu_score(predictions : List[str], targets : List[str]) -> float:
-
-    return bleu_score(predictions, targets)
 
 
 def decode_and_calculate_bleu_score(predictions : Tensor,
@@ -22,7 +16,7 @@ def decode_and_calculate_bleu_score(predictions : Tensor,
     decoded_pred_split = [sent.split(' ') for sent in decoded_pred]
     decoded_targ_split = [[sent.split(' ')] for sent in decoded_targ]
 
-    return calculate_bleu_score(decoded_pred_split, decoded_targ_split)
+    return bleu_score(decoded_pred_split, decoded_targ_split)
 
 def calculate_accuracy(predictions : Tensor, labels : Tensor, padding_idx : int = 0):
 

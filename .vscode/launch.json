@@ -5,12 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Current File",
+            "name": "Resume Base Transformer",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "${workspaceFolder}/train_script.py",
             "console": "integratedTerminal",
             "justMyCode": true,
+            "args": ["--config", "./configs/base_transformer.yaml"],
             "env" : {
                 "PYTHONPATH" : "${workspaceFolder}"
             }

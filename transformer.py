@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, List
+from typing import Dict, Literal, Tuple, List
 import torch.nn as nn
 from torch import Tensor, argmax, triu, ones, tensor, cat, unsqueeze
 
@@ -146,9 +146,9 @@ class Transformer(nn.Module):
                            src_mask=src_mask,
                            trg_mask=trg_mask)
 
-    def init_params(self, default_initialization=False):
+    def init_params(self, weight_init : Literal['default', 'xavier']):
 
-        if not default_initialization:
+        if weight_init == 'xavier':
             for _, p in self.named_parameters():
                 if p.dim() > 1:
                     nn.init.xavier_uniform_(p)
@@ -230,7 +230,6 @@ class Transformer(nn.Module):
         """
 
         device = next(self.parameters()).device
-        pad_token_id = trg_field_processor.vocab['[PAD]']
         bos_token = trg_field_processor.cls_token
 
         # Initial prompt is the beginning/start of the sentence token. Make it compatible shape with source batch => (B,1)
@@ -269,15 +268,7 @@ class Transformer(nn.Module):
             trg_token_ids_batch = cat((trg_token_ids_batch, unsqueeze(tensor(most_probable_last_token_indices, device=device), 1)), 1)
 
         # Post process the sentences - remove everything after the EOS token
-        target_sentences_tokens_post = []
-        for target_sentence_tokens in target_sentences_tokens:
-            try:
-                target_index = target_sentence_tokens.index(trg_field_processor.sep_token) + 1
-            except:
-                target_index = None
-
-            target_sentence_tokens = target_sentence_tokens[:target_index]
-            target_sentences_tokens_post.append(target_sentence_tokens)
+        target_sentences_tokens_post = trg_field_processor.batch_decode(trg_token_ids_batch, skip_special_tokens=True)
 
         return target_sentences_tokens_post
 

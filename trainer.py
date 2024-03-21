@@ -1,6 +1,6 @@
 import time
 import torch
-from nltk.translate.bleu_score import corpus_bleu
+from torchtext.data.metrics import bleu_score
 import wandb
 from data.wmt14_dataset import WMT14_Dataset, DATASET_SPLITS
 from transformer import Transformer
@@ -14,9 +14,9 @@ from pydantic import BaseModel
 from tqdm import tqdm
 from math import pow
 import datetime
-from typing import Dict, Literal, Tuple
+from typing import Dict, List, Literal, Tuple
 
-from utils.metrics import calculate_bleu_score, decode_and_calculate_bleu_score, calculate_accuracy
+from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy
 
 class Trainer():
     """
@@ -25,8 +25,8 @@ class Trainer():
 
     class Config(BaseModel):
         checkpoint_folder : str = './transformer_checkpoints/'
-        checkpoint_steps  : int = 10000     # Number of steps to then save a checkpoint
-        val_epoch_freq    : int = 10000     # How many steps have to be taken until running through the val dataloader
+        checkpoint_steps  : int = 30000     # Number of steps to then save a checkpoint
+        val_epoch_freq    : int = 50000     # How many steps have to be taken until running through the val dataloader
         learing_rate      : float = 2.0
         translation_dir   : Literal['en_to_de', 'de_to_en'] = 'de_to_en'
         batch_size        : int = 256
@@ -34,6 +34,8 @@ class Trainer():
         device            : str = 'cuda'
         logging_freq      : int = 10
         warmup_steps      : int = 4000
+        weight_init       : Literal['default', 'xavier'] = 'xavier'
+        resume_from_ckpt  : str | None = None
         mdl_config        : Transformer.Config
 
     def __init__(self, config : Config) -> None:
@@ -46,7 +48,7 @@ class Trainer():
     def _instantiate_model(self):
         self.model = Transformer(self._config.mdl_config).to(self._config.device)
         self.model.train(mode=True)
-        self.model.init_params(default_initialization=True)
+        self.model.init_params(self._config.weight_init)
         self.source_tokenizer = self.model.tokenizer_en if self._config.translation_dir == 'en_to_de' else self.model.tokenizer_de
         self.trgt_tokenizer = self.model.tokenizer_de if self._config.translation_dir == 'en_to_de' else self.model.tokenizer_en
 
@@ -113,67 +115,81 @@ class Trainer():
             f=open(f'{folder}checkpoint.pt', 'wb+')
         )
 
-    def _log_metrics(self, predictions : Tensor, labels : Tensor):
+    def _log_metrics(self, predictions : Tensor, labels : Tensor, stage : str):
 
-        wandb.log({'train_acc' : calculate_accuracy(predictions, labels)})
-        wandb.log({'blue_score' : decode_and_calculate_bleu_score(predictions, labels, self.trgt_tokenizer)})
+        wandb.log({f'{stage}_acc' : calculate_accuracy(predictions, labels)})
+        wandb.log({f'{stage}_bleu_score' : decode_and_calculate_bleu_score(predictions, labels, self.trgt_tokenizer)})
 
     def _calculate_num_tkns(self, train_batch : Tensor):
-        """Calculate the number of tokens in a batch
+        """Calculates the number of tokens in a batch.
 
         Args:
-            train_tokens (Tensor): _description_
+            train_tokens (Tensor): Value
         """
         padding_idx = self.model.tokenizer_en.pad_token_id
         train_batch[train_batch == padding_idx] = 0
 
         return train_batch.count_nonzero()
 
-    def calculate_bleu_score(self, token_ids_loader):
+    def greedy_decode_bleu_score(self, batch):
+
+        src_token_ids, trg_token_ids = batch[self.src_lang]['input_ids'], batch[self.trgt_lang]['input_ids']
+
+        src_mask = self.model.make_source_mask(src_token_ids)
+        src_representations_batch = self.model.encode(src_token_ids, src_mask)
+
+        predicted_sentences = self.model.greedy_decoding(src_representations_batch,
+                                                         src_mask,
+                                                         self.trgt_tokenizer,
+                                                         max_target_tokens=self._config.mdl_config.max_sequence_len)
+
+        predicted_sentences_corpus = [[sent] for sent in predicted_sentences]  # add them to the corpus of translations
+
+        # Get the token and not id version of GT (ground-truth) sentences
+        gt_sentences_corpus = self.trgt_tokenizer.batch_decode(trg_token_ids.cpu(),
+                                                                    skip_special_tokens=True)  # add them to the corpus of GT translations
+
+        return bleu_score(predicted_sentences_corpus, gt_sentences_corpus)
+
+    def _val_epoch(self, loss_fn : KLDivLoss):
+        """
+        Calculate metrics and loss over the validation dataset.
+        """
+        # Set the model into evaluation mode
+        self.model.eval()
+        val_dataloader = self._create_dataloader('validation', shuffle=False)
 
         with torch.no_grad():
-            pad_token_id = self.trgt_tokenizer.vocab['[PAD]']
 
-            gt_sentences_corpus = []
-            predicted_sentences_corpus = []
+            total_val_loss = []
+            total_greedy_bleu_score = []
 
-            ts = time.time()
-            for batch_idx, batch in enumerate(token_ids_loader):
+            for i, batch in tqdm(enumerate(val_dataloader), total=len(val_dataloader)):
 
-                src_token_ids_batch, trg_token_ids_batch = batch[self.src_lang]['input_ids'], batch[self.trgt_lang]['input_ids']
-                if batch_idx % 10 == 0:
-                    print(f'batch={batch_idx}, time elapsed = {time.time()-ts} seconds.')
+                if i % 10 == 0:
+                    total_greedy_bleu_score.append(self.greedy_decode_bleu_score(batch))
 
-                # Optimization - compute the source token representations only once
-                src_mask = self.model.make_source_mask(src_token_ids_batch)
-                src_representations_batch = self.model.encode(src_token_ids_batch, src_mask)
+                input_tkns, model_trg_in, model_trg_gt = self._add_labels_and_inputs(batch)
+                OH_labels = self.one_hot_labels(model_trg_gt.contiguous().reshape(-1, 1))
 
-                predicted_sentences = self.model.greedy_decoding(src_representations_batch, src_mask, self.trgt_tokenizer, max_target_tokens=self._config.mdl_config.max_sequence_len)
-                predicted_sentences_corpus.extend(predicted_sentences)  # add them to the corpus of translations
+                predictions = self.model(
+                    input_tkns=input_tkns,
+                    target_tkns=model_trg_in)
 
-                # Get the token and not id version of GT (ground-truth) sentences
-                trg_token_ids_batch = trg_token_ids_batch.cpu().numpy()
-                for target_sentence_ids in trg_token_ids_batch:
-                    target_sentence_tokens = [self.trgt_tokenizer.decode(id) for id in target_sentence_ids if id != pad_token_id]
-                    gt_sentences_corpus.append([target_sentence_tokens])  # add them to the corpus of GT translations
+                loss = loss_fn(
+                    # flatten out the predictions and labels
+                    predictions,
+                    OH_labels
+                )
 
-            bleu_score = corpus_bleu(gt_sentences_corpus, predicted_sentences_corpus)
-            bleu_score = 0 if bleu_score < 0.00001 else bleu_score
-            print(f'BLEU-4 corpus score = {bleu_score}, corpus length = {len(gt_sentences_corpus)}, time elapsed = {time.time()-ts} seconds.')
-            return bleu_score
+                total_val_loss.append(loss.cpu())
+                self._log_metrics(predictions, model_trg_gt, 'train')
 
+        def _avg(vals : List[float]):
+            return sum(vals)/len(vals)
 
-    def _val_epoch(self):
-        """Gets the loss over the val dataset.
-
-        Args:
-            val_dataloader (DataLoader):
-            loss_fn (CrossEntropyLoss):
-        """
-        val_dataloader = self._create_dataloader('validation', shuffle=False)
-        self.model.eval()
-        # Average the val loss and log
-        wandb.log({'val_bleu_score' : self.calculate_bleu_score(val_dataloader)})
+        wandb.log({'total_val_loss' : _avg(total_val_loss)})
+        wandb.log({'val_bleu_score' : _avg(total_greedy_bleu_score)})
         self.model.train()
 
     def _shift_labels(self, label_batch : Dict[str, Tensor]) -> Tuple[Tensor, Tensor]:
@@ -216,7 +232,18 @@ class Trainer():
 
         return OH_tokens
 
-    def train(self):
+    def resume(self,
+               ckpt : Dict[str, Tensor | int],
+               optimizer : Optimizer,
+               scheduler : LRScheduler):
+
+        self.model.load_state_dict(ckpt['model_state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer'])
+        scheduler.load_state_dict(ckpt['scheduler'])
+
+        return optimizer, scheduler
+
+    def train(self, ckpt : Dict[str, Tensor | int] | None = None):
 
         _ = wandb.init(
             project='transformer-testing',
@@ -227,6 +254,11 @@ class Trainer():
         optimizer = self._create_optimizer()
         scheduler = self._create_scheduler(optimizer)
         loss_fn   = self._get_loss_fn()
+
+        if ckpt:
+            optimizer, scheduler = self.resume(ckpt,
+                                               scheduler=scheduler,
+                                               optimizer=optimizer)
 
         tokens_trained = 0
 
@@ -261,10 +293,10 @@ class Trainer():
                 if i % self._config.logging_freq == 0:
                     wandb.log({'train_loss' : loss},)
                     wandb.log({'total_tokens_trained' : tokens_trained})
-                    self._log_metrics(predictions, model_trg_gt)
+                    self._log_metrics(predictions, model_trg_gt, 'train')
 
                 if i % self._config.val_epoch_freq == 0 and i != 0:
-                    self._val_epoch()
+                    self._val_epoch(loss_fn)
 
                 if i % self._config.checkpoint_steps == 0:
                     self.save_checkpoint(
