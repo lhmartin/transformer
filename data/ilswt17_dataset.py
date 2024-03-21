@@ -1,15 +1,15 @@
 from torch.utils.data import Dataset
 from typing import Literal
 from datasets import load_dataset
+from data import DATASET_SPLITS
 
-DATASET_SPLITS = Literal['train', 'test', 'valid']
 LANGUAGE_PAIRS = Literal['iwslt2017-ar-en', 'iwslt2017-de-en', 'iwslt2017-en-ar', 'iwslt2017-en-de', 'iwslt2017-en-fr',
                          'iwslt2017-en-it', 'iwslt2017-en-ja', 'iwslt2017-en-ko', 'iwslt2017-en-nl', 'iwslt2017-en-ro',
                          'iwslt2017-en-zh', 'iwslt2017-fr-en', 'iwslt2017-it-en', 'iwslt2017-it-nl', 'iwslt2017-it-ro',
                          'iwslt2017-ja-en', 'iwslt2017-ko-en', 'iwslt2017-nl-en', 'iwslt2017-nl-it', 'iwslt2017-nl-ro',
                          'iwslt2017-ro-en', 'iwslt2017-ro-it', 'iwslt2017-ro-nl', 'iwslt2017-zh-en']
 
-class WMT14_Dataset(Dataset):
+class ILSWT17_Dataset(Dataset):
 
     def __init__(self,
                  split           : DATASET_SPLITS,

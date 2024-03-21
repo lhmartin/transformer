@@ -12,7 +12,7 @@ if __name__ == '__main__':
 
     args = argparser.parse_args()
     if args.config_fp:
-        cfg = parse_yaml_file_as(Trainer.Config, 'configs/base_transformer.yaml')
+        cfg = parse_yaml_file_as(Trainer.Config, args.config_fp)
     else:
         cfg = Trainer.Config(
             mdl_config=Transformer.Config(

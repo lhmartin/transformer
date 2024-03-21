@@ -1,9 +1,9 @@
 from torch.utils.data import Dataset
 from datasets import load_dataset, DatasetDict
 from typing import Literal
+from data import DATASET_SPLITS
 
 LANGUAGE_PAIRS = Literal['de-en', 'cs-en', 'fr-en', 'hi-en', 'hu-en']
-DATASET_SPLITS = Literal['train', 'test', 'validation']
 
 class WMT14_Dataset(Dataset):
 

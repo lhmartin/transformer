@@ -14,7 +14,7 @@ from math import pow
 from typing import Dict, List, Literal, Tuple
 from torchtext.data.metrics import bleu_score
 
-from data.wmt14_dataset import WMT14_Dataset, DATASET_SPLITS
+from data import ILSWT17_Dataset, WMT14_Dataset, DATASETS
 from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy
 
 class Trainer():
@@ -27,6 +27,7 @@ class Trainer():
         checkpoint_steps  : int = 30000     # Number of steps to then save a checkpoint
         val_epoch_freq    : int = 50000     # How many steps have to be taken until running through the val dataloader
         learing_rate      : float = 2.0
+        dataset           : DATASETS = 'ILSWT17'
         translation_dir   : Literal['en_to_de', 'de_to_en'] = 'de_to_en'
         batch_size        : int = 256
         num_epochs        : int = 10
@@ -83,8 +84,11 @@ class Trainer():
 
         return LambdaLR(optimizer, lambda x : _schedule(x))
 
-    def _create_dataset(self, split : DATASET_SPLITS):
-        return WMT14_Dataset(split=split)
+    def _create_dataset(self, split : str):
+        if self._config.dataset == 'ILSWT17':
+            return ILSWT17_Dataset(split=split)
+        elif self._config.dataset == 'WMT14':
+            return WMT14_Dataset(split=split)
 
     def _create_dataloader(self, split, shuffle=True) -> DataLoader:
 
@@ -305,6 +309,14 @@ class Trainer():
                     self.save_checkpoint(
                         epoch=epoch_num,
                         step=i,
+                        optimizer=optimizer,
+                        scheduler=scheduler,
+                    )
+
+            self._val_epoch(loss_fn)
+            self.save_checkpoint(
+                        epoch=epoch_num,
+                        step=len(train_dataloader),
                         optimizer=optimizer,
                         scheduler=scheduler,
                     )

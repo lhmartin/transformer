@@ -6,12 +6,24 @@
     "configurations": [
         {
             "name": "Resume Base Transformer",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/train_script.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["--config", "./configs/base_transformer.yaml"],
+            "env" : {
+                "PYTHONPATH" : "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Base Transformer - ILSWT",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_script.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config", "./configs/base_transformer_ilswt.yaml"],
             "env" : {
                 "PYTHONPATH" : "${workspaceFolder}"
             }
