@@ -1,21 +1,20 @@
-import time
-import torch
-from torchtext.data.metrics import bleu_score
 import wandb
-from data.wmt14_dataset import WMT14_Dataset, DATASET_SPLITS
+import datetime
 from transformer import Transformer
 
+from torch import Tensor, no_grad, save, where, stack, cat, zeros
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
 from torch.nn import KLDivLoss
 from torch.utils.data import DataLoader
-from torch import Tensor, no_grad, save, where, stack, cat, zeros
+
 from pydantic import BaseModel
 from tqdm import tqdm
 from math import pow
-import datetime
 from typing import Dict, List, Literal, Tuple
+from torchtext.data.metrics import bleu_score
 
+from data.wmt14_dataset import WMT14_Dataset, DATASET_SPLITS
 from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy
 
 class Trainer():
@@ -161,7 +160,7 @@ class Trainer():
         self.model.eval()
         val_dataloader = self._create_dataloader('validation', shuffle=False)
 
-        with torch.no_grad():
+        with no_grad():
 
             total_val_loss = []
             total_greedy_bleu_score = []
@@ -228,7 +227,7 @@ class Trainer():
 
         batch_size = labels.shape[0]
 
-        OH_tokens = torch.zeros((batch_size, self._config.mdl_config.tgt_vocab_size), device=self.model.device)
+        OH_tokens = zeros((batch_size, self._config.mdl_config.tgt_vocab_size), device=self.model.device)
         OH_tokens.scatter_(1, labels, 1.0)
         OH_tokens[:, 0] = 0
 

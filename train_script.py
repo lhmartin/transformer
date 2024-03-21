@@ -1,9 +1,8 @@
 from trainer import Trainer
 from transformer import Transformer
 from torch import load
-from pydantic_yaml import parse_yaml_file_as, to_yaml_str
+from pydantic_yaml import parse_yaml_file_as
 import argparse
-import yaml
 ## This entry allows for easier saving and loading of checkpoints.
 
 if __name__ == '__main__':
