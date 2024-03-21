@@ -17,7 +17,7 @@ mdl_config:
   tgt_vocab_size: 37000
   value_dim: 512
 num_epochs: 10
-resume_from_ckpt: ./transformer_checkpoints/2024-03-19_22-00-34/2/0/checkpoint.pt
+resume_from_ckpt: ./transformer_checkpoints/2024-03-20_20-25-25/0/30000/checkpoint.pt
 translation_dir: de_to_en
 val_epoch_freq: 20000
 warmup_steps: 4000

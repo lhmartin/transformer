@@ -16,9 +16,7 @@ pydantic-yaml = "^1.2.1"
 transformers = "^4.37.2"
 wandb = "^0.16.3"
 ipykernel = "^6.29.2"
-spacy = "^3.7.4"
 torchtext = "^0.17.1"
-nltk = "^3.8.1"
 
 
 [tool.poetry.group.dev.dependencies]

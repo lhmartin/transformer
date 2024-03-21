@@ -44,6 +44,8 @@ class Trainer():
 
         self.trgt_lang =  'de' if self._config.translation_dir == 'en_to_de' else 'en'
         self.src_lang =  'en' if self._config.translation_dir == 'en_to_de' else 'de'
+        self.epoch         = 0
+        self.training_step = 0
 
     def _instantiate_model(self):
         self.model = Transformer(self._config.mdl_config).to(self._config.device)
@@ -189,7 +191,7 @@ class Trainer():
             return sum(vals)/len(vals)
 
         wandb.log({'total_val_loss' : _avg(total_val_loss)})
-        wandb.log({'val_bleu_score' : _avg(total_greedy_bleu_score)})
+        wandb.log({'val_greedy_decode_bleu_score' : _avg(total_greedy_bleu_score)})
         self.model.train()
 
     def _shift_labels(self, label_batch : Dict[str, Tensor]) -> Tuple[Tensor, Tensor]:
@@ -240,6 +242,8 @@ class Trainer():
         self.model.load_state_dict(ckpt['model_state_dict'])
         optimizer.load_state_dict(ckpt['optimizer'])
         scheduler.load_state_dict(ckpt['scheduler'])
+        self.epoch = ckpt['epoch']
+        #self.training_step = ckpt['epoch']
 
         return optimizer, scheduler
 
