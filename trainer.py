@@ -15,7 +15,7 @@ from typing import Dict, List, Literal, Tuple
 from torchtext.data.metrics import bleu_score
 
 from data import ILSWT17_Dataset, WMT14_Dataset, DATASETS
-from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy, one_hot_labels
+from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy, greedy_decode_bleu_score, one_hot_labels
 
 from torch.cuda import set_device
 from torch.utils.data.distributed import DistributedSampler
@@ -269,10 +269,16 @@ class Trainer():
             total_val_loss = []
             total_greedy_bleu_score = []
 
-            for i, batch in tqdm(enumerate(val_dataloader), total=len(val_dataloader)):
+            for batch in tqdm(val_dataloader, total=len(val_dataloader)):
 
-                # if i % 10 == 0:
-                #     total_greedy_bleu_score.append(self.greedy_decode_bleu_score(batch))
+                total_greedy_bleu_score.append(greedy_decode_bleu_score(
+                    batch,
+                    self.src_lang,
+                    self.trgt_lang,
+                    self.model,
+                    self.trgt_tokenizer,
+                    multi_gpu_mode=self.multi_gpu_mode,
+                    ))
 
                 input_tkns, model_trg_in, model_trg_gt = self._add_labels_and_inputs(batch)
 

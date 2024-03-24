@@ -22,3 +22,4 @@ translation_dir: de_to_en
 val_epoch_freq: 20000
 warmup_steps: 4000
 weight_init: xavier
+dataset: WMT14
