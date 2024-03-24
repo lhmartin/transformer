@@ -15,7 +15,7 @@ from typing import Dict, List, Literal, Tuple
 from torchtext.data.metrics import bleu_score
 
 from data import ILSWT17_Dataset, WMT14_Dataset, DATASETS
-from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy
+from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy, one_hot_labels
 
 from torch.cuda import set_device
 from torch.utils.data.distributed import DistributedSampler
@@ -33,12 +33,13 @@ class Trainer():
         checkpoint_steps  : int = 30000     # Number of steps to then save a checkpoint
         val_epoch_freq    : int = 50000     # How many steps have to be taken until running through the val dataloader
         learing_rate      : float = 2.0
+        loss_fn           : Literal['kl_div', 'cross_entropy'] = 'kl_div'
         dataset           : DATASETS = 'ILSWT17'
         translation_dir   : Literal['en_to_de', 'de_to_en'] = 'de_to_en'
         batch_size        : int = 256
         num_epochs        : int = 10
         device            : str = 'cuda'
-        gpus              : List[int] = [1]
+        gpus              : List[int] = [0]
         logging_freq      : int = 10
         warmup_steps      : int = 4000
         weight_init       : Literal['default', 'xavier'] = 'xavier'
@@ -77,8 +78,10 @@ class Trainer():
         self.model.init_params(self._config.weight_init)
 
         if self.multi_gpu_mode:
-            self.model.to(f'cuda:{self.gpu_id}')
             self.model = DDP(self.model, device_ids=[self.gpu_id])
+        else:
+            if self._config.device != 'cpu':
+                self.model.to(f'cuda:{self.gpu_id}')
 
 
     def _create_optimizer(self) -> Optimizer:
@@ -128,8 +131,22 @@ class Trainer():
                           sampler= DistributedSampler(data) if self.multi_gpu_mode else None
                           )
 
-    def _get_loss_fn(self) -> KLDivLoss:
-        return KLDivLoss(reduction='batchmean')
+    def _get_loss_fn(self) -> KLDivLoss | CrossEntropyLoss:
+        if self._config.loss_fn == 'kl_div':
+            return KLDivLoss(reduction='batchmean')
+        elif self._config.loss_fn == 'cross_entropy':
+            return CrossEntropyLoss(ignore_index=0, label_smoothing=0.1)
+        else:
+            raise ValueError(f'{self._config.loss_fn} is not a valid loss function.')
+
+    def calc_loss(self, preds : Tensor, labels : Tensor, loss_fn : KLDivLoss | CrossEntropyLoss):
+
+        labels = labels.contiguous().reshape(-1)
+
+        if self._config.loss_fn == 'kl_div':
+            labels = one_hot_labels(labels.reshape(-1,1), self._config.mdl_config.tgt_vocab_size)
+
+        return loss_fn(preds, labels)
 
     def save_checkpoint(self,
                         epoch : int,
@@ -204,17 +221,12 @@ class Trainer():
                 #     total_greedy_bleu_score.append(self.greedy_decode_bleu_score(batch))
 
                 input_tkns, model_trg_in, model_trg_gt = self._add_labels_and_inputs(batch)
-                OH_labels = self.one_hot_labels(model_trg_gt.contiguous().reshape(-1, 1))
 
                 predictions = self.model(
                     input_tkns=input_tkns,
                     target_tkns=model_trg_in)
 
-                loss = loss_fn(
-                    # flatten out the predictions and labels
-                    predictions,
-                    OH_labels
-                )
+                loss = self.calc_loss(predictions, model_trg_gt, loss_fn)
 
                 total_val_loss.append(loss.cpu())
                 self._log_metrics(predictions, model_trg_gt, 'val')
@@ -255,16 +267,6 @@ class Trainer():
             raise ValueError('Unknown translation dir')
 
         return src_tokens, model_target_in, model_target_gt
-
-    def one_hot_labels(self, labels : Tensor):
-
-        batch_size = labels.shape[0]
-
-        OH_tokens = zeros((batch_size, self._config.mdl_config.tgt_vocab_size), device=self.model.device)
-        OH_tokens.scatter_(1, labels, 1.0)
-        OH_tokens[:, 0] = 0
-
-        return OH_tokens
 
     def resume(self,
                ckpt : Dict[str, Tensor | int],
@@ -313,17 +315,11 @@ class Trainer():
                 optimizer.zero_grad()
                 input_tkns, model_trg_in, model_trg_gt = self._add_labels_and_inputs(batch)
 
-                OH_labels = self.one_hot_labels(model_trg_gt.contiguous().reshape(-1, 1))
-
                 predictions = self.model(
                     input_tkns=input_tkns,
                     target_tkns=model_trg_in)
 
-                loss = loss_fn(
-                    # flatten out the predictions and labels
-                    predictions,
-                    OH_labels
-                )
+                loss = self.calc_loss(predictions, model_trg_gt, loss_fn)
 
                 loss.backward()
                 optimizer.step()

@@ -26,8 +26,9 @@ if __name__ == '__main__':
             batch_size=64,
             learing_rate=0.5,
             val_epoch_freq=25000,
-            device='cuda',
-            translation_dir='de_to_en'
+            device='cpu',
+            translation_dir='de_to_en',
+            loss_fn='cross_entropy'
         )
 
     trainer = Trainer(cfg)
@@ -40,4 +41,4 @@ if __name__ == '__main__':
         world_size = device_count()
         mp.spawn(trainer.train, args=(world_size, ckpt), nprocs=world_size)
     else:
-        trainer.train(ckpt=ckpt, rank=0)
+        trainer.train(ckpt=ckpt, rank=0, world_size=1)

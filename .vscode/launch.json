@@ -29,13 +29,13 @@
             }
         },
         {
-            "name": "Base Transformer - ILSWT",
+            "name": "Base Transformer - CE- ILSWT",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/train_script.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--config", "./configs/base_transformer_ilswt.yaml"],
+            "args": ["--config", "./configs/base_transformer_ilswt_cross_entropy.yaml"],
             "env" : {
                 "PYTHONPATH" : "${workspaceFolder}"
             }

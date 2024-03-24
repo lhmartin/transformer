@@ -1,5 +1,5 @@
 from torchtext.data.metrics import bleu_score
-from torch import Tensor, argmax
+from torch import Tensor, argmax, zeros
 from transformers import PreTrainedTokenizer
 
 
@@ -24,3 +24,13 @@ def calculate_accuracy(predictions : Tensor, labels : Tensor, padding_idx : int 
     ids = argmax(predictions, dim=-1)
     acc = ((ids == labels)[labels != padding_idx].float().sum() )/ (labels != 0).bool().sum()
     return acc
+
+def one_hot_labels(labels : Tensor, vocab_size : int):
+
+        batch_size = labels.shape[0]
+
+        OH_tokens = zeros((batch_size, vocab_size))
+        OH_tokens.scatter_(1, labels, 1.0)
+        OH_tokens[:, 0] = 0
+
+        return OH_tokens
