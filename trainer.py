@@ -43,15 +43,15 @@ class Trainer():
         logging_freq      : int = 10
         warmup_steps      : int = 4000
         weight_init       : Literal['default', 'xavier'] = 'xavier'
-        resume_from_ckpt  : str | None = None
+        resume_from_ckpt  : str | None = None   # Path to the training checkpoint.
         mdl_config        : Transformer.Config
 
     def __init__(self, config : Config) -> None:
         self._config = config
         self.checkpoint_folder = self._config.checkpoint_folder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '/'
 
-        self.trgt_lang =  'de' if self._config.translation_dir == 'en_to_de' else 'en'
-        self.src_lang =  'en' if self._config.translation_dir == 'en_to_de' else 'de'
+        self.trgt_lang     = 'de' if self._config.translation_dir == 'en_to_de' else 'en'
+        self.src_lang      = 'en' if self._config.translation_dir == 'en_to_de' else 'de'
         self.epoch         = 0
         self.training_step = 0
         self.multi_gpu_mode = len(self._config.gpus) > 1
@@ -69,6 +69,10 @@ class Trainer():
         init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
     def _instantiate_model(self):
+        """
+        Initializes the model class and weights. Sets up the appropiate tokenizers.
+        Moves the model to appropiate device. If in multi-GPU mode, sets up a DDP instance.
+        """
         self.model = Transformer(self._config.mdl_config)
 
         self.source_tokenizer = self.model.tokenizer_en if self._config.translation_dir == 'en_to_de' else self.model.tokenizer_de
@@ -85,13 +89,14 @@ class Trainer():
 
 
     def _create_optimizer(self) -> Optimizer:
+        """Instantiates and AdamW optimizer."""
         return AdamW(self.model.parameters(),
                     betas=(0.9, 0.98),
                     weight_decay=10e-9,
                     lr = self._config.learing_rate)
 
     def _create_scheduler(self, optimizer : Optimizer) -> LRScheduler:
-        """Creates the custom learning rate scheduled optimzer.
+        """Creates the custom learning rate scheduled optimizer.
 
         Args:
             optimizer (Optimizer): The optimizer that will have its learning rate changed
@@ -101,7 +106,6 @@ class Trainer():
         """
 
         def _schedule(step : int) -> float:
-
             # to account for step = 0
             step += 1
 
@@ -114,16 +118,36 @@ class Trainer():
 
         return LambdaLR(optimizer, lambda x : _schedule(x))
 
-    def _create_dataset(self, split : str):
+    def _create_dataset(self, split : str) -> ILSWT17_Dataset | WMT14_Dataset:
+        """Creates the approtite dataset split for the dataset that is
+        defined in the config.
+
+        Args:
+            split (str): The split of data that is to be retrieved.
+            Can be 'train', 'test' or 'validation'
+
+        Returns:
+            _type_: _description_
+        """
         if self._config.dataset == 'ILSWT17':
             return ILSWT17_Dataset(split=split)
         elif self._config.dataset == 'WMT14':
             return WMT14_Dataset(split=split)
+        else:
+            raise ValueError(f'{self._config.dataset} is not a supported dataset.')
 
-    def _create_dataloader(self, split, shuffle=True) -> DataLoader:
+    def _create_dataloader(self, split : str, shuffle : bool = True) -> DataLoader:
+        """Insantiates and returns a pytorch Dataloader, for the appropiate data split.
 
+        Args:
+            split (str): Which portion of the data to use, (eg: train/test/validation)
+            shuffle (bool, optional): Whether or not to randomly shuffle the data. Defaults to True.
+        """
         data = self._create_dataset(split)
+
+        # if in multi gpu mode, need to instead get the collate_fn from the module
         collate_fn = self.model.collate_fn if not self.multi_gpu_mode else self.model.module.collate_fn
+
         return DataLoader(dataset=data,
                           batch_size=self._config.batch_size,
                           collate_fn=collate_fn,
@@ -132,6 +156,14 @@ class Trainer():
                           )
 
     def _get_loss_fn(self) -> KLDivLoss | CrossEntropyLoss:
+        """Instantiates and returns the loss function instance.
+
+        Raises:
+            ValueError: If the configured loss function is not supported
+
+        Returns:
+            KLDivLoss | CrossEntropyLoss
+        """
         if self._config.loss_fn == 'kl_div':
             return KLDivLoss(reduction='batchmean')
         elif self._config.loss_fn == 'cross_entropy':
@@ -139,21 +171,34 @@ class Trainer():
         else:
             raise ValueError(f'{self._config.loss_fn} is not a valid loss function.')
 
-    def calc_loss(self, preds : Tensor, labels : Tensor, loss_fn : KLDivLoss | CrossEntropyLoss):
+    def calc_loss(self, predictions_batch : Tensor, label_batch : Tensor, loss_fn : KLDivLoss | CrossEntropyLoss) -> Tensor:
+        """Calculates the loss between `pred_batch` and `label_batch` using the given `loss_fn`.
 
-        labels = labels.contiguous().reshape(-1)
+        Args:
+            predictions_batch (Tensor): The model's preductions shape : [batch_size x seq_len, num_trg_tokens]
+            label_batch (Tensor): Ground truth labels shape : [batch_size, seq_len]
+            loss_fn (KLDivLoss | CrossEntropyLoss): Function that is used to calculate loss
+
+        Returns:
+            Tensor: The loss over the batch
+        """
+        # reshape from [batch_size, seq_len, 1] to [batch_size x seq_len], to match model output
+        label_batch = label_batch.contiguous().reshape(-1)
 
         if self._config.loss_fn == 'kl_div':
-            labels = one_hot_labels(labels.reshape(-1,1), self._config.mdl_config.tgt_vocab_size)
+            # kl divergence needs the labels to be the same shape as the predctions, this function transforms
+            # the lable indexes into a vector a vector of size [num_trg_tokens, 1] where the value at the index 
+            # of the target token is 1 and 0 everywhere else.
+            label_batch = one_hot_labels(label_batch.reshape(-1,1), self._config.mdl_config.tgt_vocab_size)
 
-        return loss_fn(preds, labels)
+        return loss_fn(predictions_batch, label_batch)
 
     def save_checkpoint(self,
                         epoch : int,
                         step : int,
                         optimizer : Optimizer,
                         scheduler : LRScheduler):
-        import os
+
         folder = f'{self.checkpoint_folder}{epoch}/{step}/'
         os.makedirs(folder, exist_ok=True)
         save({
@@ -167,18 +212,27 @@ class Trainer():
         )
 
     def _log_metrics(self, predictions : Tensor, labels : Tensor, stage : str):
+        """Logs metrics to weights and biases, currently support two metrics.
+        Accuracy - A measurement of how many tokens were correctly predicted.
+        blue_score - A measurement of predicted text quality (https://en.wikipedia.org/wiki/BLEU)
+
+        Args:
+            predictions_batch (Tensor): The model's preductions shape : [batch_size x seq_len, num_trg_tokens]
+            label_batch (Tensor): Ground truth labels shape : [batch_size, seq_len]
+            stage (str): What stage of training, will be added to logged metric name.
+        """
 
         wandb.log({f'{stage}_acc' : calculate_accuracy(predictions, labels)})
         wandb.log({f'{stage}_bleu_score' : decode_and_calculate_bleu_score(predictions, labels, self.trgt_tokenizer)})
 
-    def _calculate_num_tkns(self, train_batch : Tensor):
-        """Calculates the number of tokens in a batch.
+    def _calculate_num_tkns(self, train_batch : Tensor) -> Tensor:
+        """Calculates the number of non-padding tokens in a batch.
 
         Args:
-            train_tokens (Tensor): Value
+            train_tokens (Tensor): batch of input tokens.
         """
-        padding_idx = self.source_tokenizer.pad_token_id
-        train_batch[train_batch == padding_idx] = 0
+        padding_id = self.source_tokenizer.pad_token_id
+        train_batch[train_batch == padding_id] = 0
 
         return train_batch.count_nonzero()
 
@@ -239,6 +293,14 @@ class Trainer():
         self.model.train()
 
     def _shift_labels(self, label_batch : Dict[str, Tensor]) -> Tuple[Tensor, Tensor]:
+        """Moves the labels i
+
+        Args:
+            label_batch (Dict[str, Tensor]): _description_
+
+        Returns:
+            Tuple[Tensor, Tensor]: _description_
+        """
 
         model_target_in = []
         model_target_gt = []
