@@ -1,8 +1,10 @@
 from trainer import Trainer
 from transformer import Transformer
 from torch import load
+from torch.cuda import device_count
 from pydantic_yaml import parse_yaml_file_as
 import argparse
+import torch.multiprocessing as mp
 ## This entry allows for easier saving and loading of checkpoints.
 
 if __name__ == '__main__':
@@ -34,4 +36,8 @@ if __name__ == '__main__':
     if cfg.resume_from_ckpt is not None:
         ckpt = load(open(cfg.resume_from_ckpt, 'rb'))
 
-    trainer.train(ckpt)
+    if trainer.multi_gpu_mode:
+        world_size = device_count()
+        mp.spawn(trainer.train, args=(world_size, ckpt), nprocs=world_size)
+    else:
+        trainer.train(ckpt=ckpt, rank=0)

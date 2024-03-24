@@ -17,6 +17,7 @@ mdl_config:
   tgt_vocab_size: 37000
   value_dim: 512
 num_epochs: 50
+gpus: [1,2]
 resume_from_ckpt: null
 translation_dir: de_to_en
 val_epoch_freq: 20000

@@ -5,7 +5,7 @@ from transformer import Transformer
 from torch import Tensor, no_grad, save, where, stack, cat, zeros
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LRScheduler
-from torch.nn import KLDivLoss
+from torch.nn import KLDivLoss, CrossEntropyLoss
 from torch.utils.data import DataLoader
 
 from pydantic import BaseModel
@@ -17,9 +17,15 @@ from torchtext.data.metrics import bleu_score
 from data import ILSWT17_Dataset, WMT14_Dataset, DATASETS
 from utils.metrics import decode_and_calculate_bleu_score, calculate_accuracy
 
+from torch.cuda import set_device
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group, destroy_process_group
+import os
+
 class Trainer():
     """
-    Manages the training of the Transformer model
+    Manages the training of the Transformer model.
     """
 
     class Config(BaseModel):
@@ -32,6 +38,7 @@ class Trainer():
         batch_size        : int = 256
         num_epochs        : int = 10
         device            : str = 'cuda'
+        gpus              : List[int] = [1]
         logging_freq      : int = 10
         warmup_steps      : int = 4000
         weight_init       : Literal['default', 'xavier'] = 'xavier'
@@ -46,13 +53,33 @@ class Trainer():
         self.src_lang =  'en' if self._config.translation_dir == 'en_to_de' else 'de'
         self.epoch         = 0
         self.training_step = 0
+        self.multi_gpu_mode = len(self._config.gpus) > 1
+        self.gpu_id = None if self.multi_gpu_mode else self._config.gpus[0]
+
+    def ddp_setup(self, rank : int, world_size : int):
+        """
+        Args:
+            rank: Unique identifier of each process
+            world_size: Total number of processes
+        """
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = "12355"
+        set_device(rank)
+        init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
     def _instantiate_model(self):
-        self.model = Transformer(self._config.mdl_config).to(self._config.device)
-        self.model.train(mode=True)
-        self.model.init_params(self._config.weight_init)
+        self.model = Transformer(self._config.mdl_config)
+
         self.source_tokenizer = self.model.tokenizer_en if self._config.translation_dir == 'en_to_de' else self.model.tokenizer_de
         self.trgt_tokenizer = self.model.tokenizer_de if self._config.translation_dir == 'en_to_de' else self.model.tokenizer_en
+
+        self.model.train(mode=True)
+        self.model.init_params(self._config.weight_init)
+
+        if self.multi_gpu_mode:
+            self.model.to(f'cuda:{self.gpu_id}')
+            self.model = DDP(self.model, device_ids=[self.gpu_id])
+
 
     def _create_optimizer(self) -> Optimizer:
         return AdamW(self.model.parameters(),
@@ -93,10 +120,12 @@ class Trainer():
     def _create_dataloader(self, split, shuffle=True) -> DataLoader:
 
         data = self._create_dataset(split)
+        collate_fn = self.model.collate_fn if not self.multi_gpu_mode else self.model.module.collate_fn
         return DataLoader(dataset=data,
                           batch_size=self._config.batch_size,
-                          collate_fn=self.model.collate_fn,
-                          shuffle=shuffle,
+                          collate_fn=collate_fn,
+                          shuffle= False if self.multi_gpu_mode else shuffle,
+                          sampler= DistributedSampler(data) if self.multi_gpu_mode else None
                           )
 
     def _get_loss_fn(self) -> KLDivLoss:
@@ -112,7 +141,7 @@ class Trainer():
         os.makedirs(folder, exist_ok=True)
         save({
                 'epoch' : epoch,
-                'model_state_dict' : self.model.state_dict(),
+                'model_state_dict' : self.model.state_dict() if not self.multi_gpu_mode else self.model.module.state_dict(),
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict(),
                 'config' : self._config,
@@ -131,7 +160,7 @@ class Trainer():
         Args:
             train_tokens (Tensor): Value
         """
-        padding_idx = self.model.tokenizer_en.pad_token_id
+        padding_idx = self.source_tokenizer.pad_token_id
         train_batch[train_batch == padding_idx] = 0
 
         return train_batch.count_nonzero()
@@ -171,8 +200,8 @@ class Trainer():
 
             for i, batch in tqdm(enumerate(val_dataloader), total=len(val_dataloader)):
 
-                if i % 10 == 0:
-                    total_greedy_bleu_score.append(self.greedy_decode_bleu_score(batch))
+                # if i % 10 == 0:
+                #     total_greedy_bleu_score.append(self.greedy_decode_bleu_score(batch))
 
                 input_tkns, model_trg_in, model_trg_gt = self._add_labels_and_inputs(batch)
                 OH_labels = self.one_hot_labels(model_trg_gt.contiguous().reshape(-1, 1))
@@ -188,13 +217,13 @@ class Trainer():
                 )
 
                 total_val_loss.append(loss.cpu())
-                self._log_metrics(predictions, model_trg_gt, 'train')
+                self._log_metrics(predictions, model_trg_gt, 'val')
 
         def _avg(vals : List[float]):
             return sum(vals)/len(vals)
 
         wandb.log({'total_val_loss' : _avg(total_val_loss)})
-        wandb.log({'val_greedy_decode_bleu_score' : _avg(total_greedy_bleu_score)})
+        # wandb.log({'val_greedy_decode_bleu_score' : _avg(total_greedy_bleu_score)})
         self.model.train()
 
     def _shift_labels(self, label_batch : Dict[str, Tensor]) -> Tuple[Tensor, Tensor]:
@@ -250,12 +279,16 @@ class Trainer():
 
         return optimizer, scheduler
 
-    def train(self, ckpt : Dict[str, Tensor | int] | None = None):
+    def train(self, rank : int, world_size : int, ckpt : Dict[str, Tensor | int] | None = None):
+        if self.multi_gpu_mode:
+            self.ddp_setup(rank, world_size)
+            self.gpu_id = rank
 
-        _ = wandb.init(
-            project='transformer-testing',
-            config = self._config.dict(),
-        )
+        if rank == 0:
+            _ = wandb.init(
+                project='transformer-testing',
+                config = self._config.dict(),
+            )
 
         self._instantiate_model()
         optimizer = self._create_optimizer()
@@ -270,9 +303,10 @@ class Trainer():
         tokens_trained = 0
 
         for epoch_num in range(0, self._config.num_epochs):
-
             # re-shulffles the data by remaking each epoch
             train_dataloader = self._create_dataloader('train', shuffle=True)
+            if self.multi_gpu_mode:
+                train_dataloader.sampler.set_epoch(epoch_num)
 
             for i, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
 
@@ -297,15 +331,15 @@ class Trainer():
 
                 tokens_trained += self._calculate_num_tkns(input_tkns)
 
-                if i % self._config.logging_freq == 0:
+                if i % self._config.logging_freq == 0 and rank == 0:
                     wandb.log({'train_loss' : loss},)
                     wandb.log({'total_tokens_trained' : tokens_trained})
                     self._log_metrics(predictions, model_trg_gt, 'train')
 
-                if i % self._config.val_epoch_freq == 0 and i != 0:
+                if i % self._config.val_epoch_freq == 0 and i != 0 and rank == 0:
                     self._val_epoch(loss_fn)
 
-                if i % self._config.checkpoint_steps == 0:
+                if i % self._config.checkpoint_steps == 0 and rank == 0:
                     self.save_checkpoint(
                         epoch=epoch_num,
                         step=i,
@@ -322,3 +356,6 @@ class Trainer():
                     )
 
             print(f'Epoch {epoch_num} complete')
+
+        if self.multi_gpu_mode:
+            destroy_process_group()

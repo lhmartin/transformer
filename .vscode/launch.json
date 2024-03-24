@@ -17,6 +17,18 @@
             }
         },
         {
+            "name": "Base Transformer - 2 GPU- ILSWT",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_script.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["--config", "./configs/base_transformer_ilswt_multi_gpu.yaml"],
+            "env" : {
+                "PYTHONPATH" : "${workspaceFolder}"
+            }
+        },
+        {
             "name": "Base Transformer - ILSWT",
             "type": "debugpy",
             "request": "launch",
