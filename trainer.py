@@ -285,19 +285,6 @@ class Trainer():
 
         return stack(model_target_in), stack(model_target_target)
 
-    def _add_labels_and_inputs(self, batch : Dict[str, Dict[str, Tensor]]) -> Tuple[Tensor, Tensor, Tensor]:
-
-        if self._config.translation_dir == 'de_to_en':
-            model_target_in, model_target_gt = self._shift_labels(batch['en'])
-            src_tokens = batch['de']['input_ids']
-        elif self._config.translation_dir == 'en_to_de':
-            model_target_in, model_target_gt = self._shift_labels(batch['de'])
-            src_tokens = batch['en']['input_ids']
-        else:
-            raise ValueError('Unknown translation dir')
-
-        return src_tokens, model_target_in, model_target_gt
-
     def resume(self,
                ckpt : Dict[str, Tensor | int],
                optimizer : Optimizer,
@@ -349,24 +336,26 @@ class Trainer():
             for i, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
 
                 optimizer.zero_grad()
-                input_tkns, model_trg_in, model_trg_gt = self._add_labels_and_inputs(batch)
+
+                model_target_in, model_target_gt = self._shift_labels(batch[self.trgt_lang])
+                input_tokens = batch[self.src_lang]['input_ids']
 
                 predictions = self.model(
-                    input_tkns=input_tkns,
-                    target_tkns=model_trg_in)
+                    input_tkns=input_tokens,
+                    target_tkns=model_target_in)
 
-                loss = self.calc_loss(predictions, model_trg_gt, loss_fn)
+                loss = self.calc_loss(predictions, model_target_gt, loss_fn)
 
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
 
-                tokens_trained += self._calculate_num_tkns(input_tkns)
+                tokens_trained += self._calculate_num_tkns(model_target_in)
 
                 if i % self._config.logging_freq == 0 and rank == 0:
                     wandb.log({'train_loss' : loss},)
                     wandb.log({'total_tokens_trained' : tokens_trained})
-                    self._log_metrics(predictions, model_trg_gt, 'train')
+                    self._log_metrics(predictions, model_target_gt, 'train')
 
                 if i % self._config.val_epoch_freq == 0 and i != 0 and rank == 0:
                     self._val_epoch(loss_fn)
@@ -420,16 +409,17 @@ class Trainer():
                     multi_gpu_mode=self.multi_gpu_mode,
                     ))
 
-                input_tkns, model_trg_in, model_trg_gt = self._add_labels_and_inputs(batch)
+                model_target_in, model_target_gt = self._shift_labels(batch[self.trgt_lang])
+                src_tokens = batch[self.src_lang]['input_ids']
 
                 predictions = self.model(
-                    input_tkns=input_tkns,
-                    target_tkns=model_trg_in)
+                    input_tkns=src_tokens,
+                    target_tkns=model_target_in)
 
-                loss = self.calc_loss(predictions, model_trg_gt, loss_fn)
+                loss = self.calc_loss(predictions, model_target_gt, loss_fn)
 
                 total_val_loss.append(loss.cpu())
-                acc, bleu = self.calc_metrics(predictions, model_trg_gt)
+                acc, bleu = self.calc_metrics(predictions, model_target_gt)
 
                 total_acc.append(acc)
                 total_bleu.append(bleu)
