@@ -242,55 +242,6 @@ class Trainer():
 
         return train_batch.count_nonzero()
 
-    def _val_epoch(self, loss_fn : KLDivLoss):
-        """
-        Calculate metrics and loss over the validation dataset.
-        """
-        # Set the model into evaluation mode
-        self.model.eval()
-        val_dataloader = self._create_dataloader('validation', shuffle=False)
-
-        with no_grad():
-
-            total_val_loss = []
-            total_greedy_bleu_score = []
-            total_acc = []
-            total_bleu = []
-
-            for batch in tqdm(val_dataloader, total=len(val_dataloader)):
-
-                total_greedy_bleu_score.append(greedy_decode_bleu_score(
-                    batch,
-                    self.src_lang,
-                    self.trgt_lang,
-                    self.model,
-                    self.trgt_tokenizer,
-                    multi_gpu_mode=self.multi_gpu_mode,
-                    ))
-
-                input_tkns, model_trg_in, model_trg_gt = self._add_labels_and_inputs(batch)
-
-                predictions = self.model(
-                    input_tkns=input_tkns,
-                    target_tkns=model_trg_in)
-
-                loss = self.calc_loss(predictions, model_trg_gt, loss_fn)
-
-                total_val_loss.append(loss.cpu())
-                acc, bleu = self.calc_metrics(predictions, model_trg_gt)
-
-                total_acc.append(acc)
-                total_bleu.append(bleu)
-
-        def _avg(vals : List[float]):
-            return sum(vals)/len(vals)
-
-        wandb.log({'total_val_loss' : _avg(total_val_loss)})
-        wandb.log({'val_greedy_decode_bleu_score' : _avg(total_greedy_bleu_score)})
-        wandb.log({'total_val_acc' : _avg(total_acc)})
-        wandb.log({'val_bleu_score' : _avg(total_bleu)})
-        self.model.train()
-
     def _shift_labels(self, label_batch : Dict[str, Tensor]) -> Tuple[Tensor, Tensor]:
         """Moves the labels for input to the model and for the loss function.
         For example, given a target of ['<START>', 'My', 'name' 'is' 'Luke' '<END>'].
@@ -428,15 +379,66 @@ class Trainer():
                         scheduler=scheduler,
                     )
 
-            self._val_epoch(loss_fn)
-            self.save_checkpoint(
-                        epoch=epoch_num,
-                        step=len(train_dataloader),
-                        optimizer=optimizer,
-                        scheduler=scheduler,
-                    )
+            if rank == 0:
+                self._val_epoch(loss_fn)
+
+                self.save_checkpoint(
+                            epoch=epoch_num,
+                            step=len(train_dataloader),
+                            optimizer=optimizer,
+                            scheduler=scheduler,
+                        )
 
             print(f'Epoch {epoch_num} complete')
 
         if self.multi_gpu_mode:
             destroy_process_group()
+
+    def _val_epoch(self, loss_fn : KLDivLoss):
+        """
+        Calculate metrics and loss over the validation dataset.
+        """
+        # Set the model into evaluation mode
+        self.model.eval()
+        val_dataloader = self._create_dataloader('validation', shuffle=False)
+
+        with no_grad():
+
+            total_val_loss = []
+            total_greedy_bleu_score = []
+            total_acc = []
+            total_bleu = []
+
+            for batch in tqdm(val_dataloader, total=len(val_dataloader)):
+
+                total_greedy_bleu_score.append(greedy_decode_bleu_score(
+                    batch,
+                    self.src_lang,
+                    self.trgt_lang,
+                    self.model,
+                    self.trgt_tokenizer,
+                    multi_gpu_mode=self.multi_gpu_mode,
+                    ))
+
+                input_tkns, model_trg_in, model_trg_gt = self._add_labels_and_inputs(batch)
+
+                predictions = self.model(
+                    input_tkns=input_tkns,
+                    target_tkns=model_trg_in)
+
+                loss = self.calc_loss(predictions, model_trg_gt, loss_fn)
+
+                total_val_loss.append(loss.cpu())
+                acc, bleu = self.calc_metrics(predictions, model_trg_gt)
+
+                total_acc.append(acc)
+                total_bleu.append(bleu)
+
+        def _avg(vals : List[float]):
+            return sum(vals)/len(vals)
+
+        wandb.log({'total_val_loss' : _avg(total_val_loss)})
+        wandb.log({'val_greedy_decode_bleu_score' : _avg(total_greedy_bleu_score)})
+        wandb.log({'total_val_acc' : _avg(total_acc)})
+        wandb.log({'val_bleu_score' : _avg(total_bleu)})
+        self.model.train()

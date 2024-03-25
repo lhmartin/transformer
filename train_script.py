@@ -25,8 +25,9 @@ if __name__ == '__main__':
                 ),
             batch_size=64,
             learing_rate=0.5,
-            val_epoch_freq=25000,
-            device='cpu',
+            val_epoch_freq=1,
+            device='gpu',
+            gpus=[0,1],
             translation_dir='de_to_en',
             loss_fn='cross_entropy'
         )
