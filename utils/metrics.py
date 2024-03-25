@@ -31,7 +31,7 @@ def one_hot_labels(labels : Tensor, vocab_size : int):
 
         batch_size = labels.shape[0]
 
-        OH_tokens = zeros((batch_size, vocab_size))
+        OH_tokens = zeros((batch_size, vocab_size), device=labels.device)
         OH_tokens.scatter_(1, labels, 1.0)
         OH_tokens[:, 0] = 0
 

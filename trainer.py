@@ -53,7 +53,6 @@ class Trainer():
         self.trgt_lang     = 'de' if self._config.translation_dir == 'en_to_de' else 'en'
         self.src_lang      = 'en' if self._config.translation_dir == 'en_to_de' else 'de'
         self.epoch         = 0
-        self.training_step = 0
         self.multi_gpu_mode = len(self._config.gpus) > 1
         self.gpu_id = None if self.multi_gpu_mode else self._config.gpus[0]
 
@@ -82,6 +81,7 @@ class Trainer():
         self.model.init_params(self._config.weight_init)
 
         if self.multi_gpu_mode:
+            self.model.to(f'cuda:{self.gpu_id}')
             self.model = DDP(self.model, device_ids=[self.gpu_id])
         else:
             if self._config.device != 'cpu':
@@ -211,7 +211,11 @@ class Trainer():
             f=open(f'{folder}checkpoint.pt', 'wb+')
         )
 
-    def _log_metrics(self, predictions : Tensor, labels : Tensor, stage : str):
+    def calc_metrics(self, predictions : Tensor, labels : Tensor) -> Tuple[Tensor, float]:
+        return calculate_accuracy(predictions, labels), \
+            decode_and_calculate_bleu_score(predictions, labels, self.trgt_tokenizer)
+
+    def _log_metrics(self, predictions : Tensor, labels : Tensor, stage : str) -> None:
         """Logs metrics to weights and biases, currently support two metrics.
         Accuracy - A measurement of how many tokens were correctly predicted.
         blue_score - A measurement of predicted text quality (https://en.wikipedia.org/wiki/BLEU)
@@ -222,8 +226,10 @@ class Trainer():
             stage (str): What stage of training, will be added to logged metric name.
         """
 
-        wandb.log({f'{stage}_acc' : calculate_accuracy(predictions, labels)})
-        wandb.log({f'{stage}_bleu_score' : decode_and_calculate_bleu_score(predictions, labels, self.trgt_tokenizer)})
+        acc, bleu_score = self.calc_metrics(predictions, labels)
+
+        wandb.log({f'{stage}_acc' : acc})
+        wandb.log({f'{stage}_bleu_score' : bleu_score})
 
     def _calculate_num_tkns(self, train_batch : Tensor) -> Tensor:
         """Calculates the number of non-padding tokens in a batch.
@@ -235,26 +241,6 @@ class Trainer():
         train_batch[train_batch == padding_id] = 0
 
         return train_batch.count_nonzero()
-
-    def greedy_decode_bleu_score(self, batch):
-
-        src_token_ids, trg_token_ids = batch[self.src_lang]['input_ids'], batch[self.trgt_lang]['input_ids']
-
-        src_mask = self.model.make_source_mask(src_token_ids)
-        src_representations_batch = self.model.encode(src_token_ids, src_mask)
-
-        predicted_sentences = self.model.greedy_decoding(src_representations_batch,
-                                                         src_mask,
-                                                         self.trgt_tokenizer,
-                                                         max_target_tokens=self._config.mdl_config.max_sequence_len)
-
-        predicted_sentences_corpus = [[sent] for sent in predicted_sentences]  # add them to the corpus of translations
-
-        # Get the token and not id version of GT (ground-truth) sentences
-        gt_sentences_corpus = self.trgt_tokenizer.batch_decode(trg_token_ids.cpu(),
-                                                                    skip_special_tokens=True)  # add them to the corpus of GT translations
-
-        return bleu_score(predicted_sentences_corpus, gt_sentences_corpus)
 
     def _val_epoch(self, loss_fn : KLDivLoss):
         """
@@ -268,6 +254,8 @@ class Trainer():
 
             total_val_loss = []
             total_greedy_bleu_score = []
+            total_acc = []
+            total_bleu = []
 
             for batch in tqdm(val_dataloader, total=len(val_dataloader)):
 
@@ -289,27 +277,47 @@ class Trainer():
                 loss = self.calc_loss(predictions, model_trg_gt, loss_fn)
 
                 total_val_loss.append(loss.cpu())
-                self._log_metrics(predictions, model_trg_gt, 'val')
+                acc, bleu = self.calc_metrics(predictions, model_trg_gt)
+
+                total_acc.append(acc)
+                total_bleu.append(bleu)
 
         def _avg(vals : List[float]):
             return sum(vals)/len(vals)
 
         wandb.log({'total_val_loss' : _avg(total_val_loss)})
-        # wandb.log({'val_greedy_decode_bleu_score' : _avg(total_greedy_bleu_score)})
+        wandb.log({'val_greedy_decode_bleu_score' : _avg(total_greedy_bleu_score)})
+        wandb.log({'total_val_acc' : _avg(total_acc)})
+        wandb.log({'val_bleu_score' : _avg(total_bleu)})
         self.model.train()
 
     def _shift_labels(self, label_batch : Dict[str, Tensor]) -> Tuple[Tensor, Tensor]:
-        """Moves the labels i
+        """Moves the labels for input to the model and for the loss function.
+        For example, given a target of ['<START>', 'My', 'name' 'is' 'Luke' '<END>'].
+        The tokens that will go into the transformer need to only come from before the
+        token that should be predicted.
+
+            eg: ['<START>'] -> ['My']
+            eg: ['<START>', 'My'] -> ['name']
+            ...
+            eg: ['<START>', 'My', 'name' 'is' 'Luke'] -> ['<END>']
+
+        This shift is essential, otherwise the model can effectively look at the future
+        tokens and will not learn anything.
+
+        Therefore we need to shift the labels to reflect that, to as follows:
+            model input:  ['<START>', 'My', 'name' 'is' 'Luke']
+            target:       ['My', 'name' 'is' 'Luke', '<END>']
 
         Args:
-            label_batch (Dict[str, Tensor]): _description_
+            label_batch (Dict[str, Tensor]): A batch of target input ids
 
         Returns:
-            Tuple[Tensor, Tensor]: _description_
+            Tuple[Tensor, Tensor]: The model inputs, and targets
         """
 
         model_target_in = []
-        model_target_gt = []
+        model_target_target = []
 
         for row in label_batch['input_ids']:
             if 0 in row:
@@ -318,10 +326,13 @@ class Trainer():
                 pad_idx = len(row)
 
             non_padded = row[:pad_idx]
+            # drop the last token, and re-add padding
             model_target_in.append(cat((non_padded[:-1], row[pad_idx:])))
-            model_target_gt.append(cat((non_padded[1:], row[pad_idx:])))
 
-        return stack(model_target_in), stack(model_target_gt)
+            # drop the first token, and re-add padding
+            model_target_target.append(cat((non_padded[1:], row[pad_idx:])))
+
+        return stack(model_target_in), stack(model_target_target)
 
     def _add_labels_and_inputs(self, batch : Dict[str, Dict[str, Tensor]]) -> Tuple[Tensor, Tensor, Tensor]:
 
@@ -339,13 +350,19 @@ class Trainer():
     def resume(self,
                ckpt : Dict[str, Tensor | int],
                optimizer : Optimizer,
-               scheduler : LRScheduler):
+               scheduler : LRScheduler) -> None:
+        """Resume training from a checkpoint.
+
+        Args:
+            ckpt (Dict[str, Tensor  |  int]): The dictionaty containing all the state
+            optimizer (Optimizer): The optimizer that will be updated
+            scheduler (LRScheduler): The scheduler that will be update
+        """
 
         self.model.load_state_dict(ckpt['model_state_dict'])
         optimizer.load_state_dict(ckpt['optimizer'])
         scheduler.load_state_dict(ckpt['scheduler'])
         self.epoch = ckpt['epoch']
-        #self.training_step = ckpt['epoch']
 
         return optimizer, scheduler
 
