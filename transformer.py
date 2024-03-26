@@ -83,13 +83,31 @@ class Transformer(nn.Module):
         self.tokenizer_de = AutoTokenizer.from_pretrained('bert-base-german-cased')
 
     def encode(self, input_sequence: Tensor, mask : Tensor | None = None) -> Tensor:
+        """Embed the the input sequence using the embedding trunk.
 
+        Args:
+            input_sequence (Tensor): Sequence of token ids of shape: [batch_size x seq_len]
+            mask (Tensor | None, optional):
+                Mask of where the padding tokens are shape [batch_size x 1 x 1 x seq_len].
+                It has this shape, because it will be used on the attention matrix.
+                which has shape: [batch_size x num_heads x seq_len x seq_len], so they must match in the
+                number of dimensions to be applied to each other.
+                Defaults to None.
+
+        Returns:
+            Tensor: A matrix of the embedded sequence. Shape: [batch_size x seq_len x model_dimension]
+        """
+
+        # Embed the single ids into learned embeddings: [batch_size x seq_len] -> [batch_size x seq_len x model_dimension]
         tokens = self.source_embedder(input_sequence) * sqrt(self._config.model_dimension)
 
-        # add positional embeddings
+        # add positional embeddings, these encode the relative positions of the tokens
+        # allowing the model to understand the order in which the tokens occur.
         tokens = self.pos_encoding_enc(tokens)
+
         tokens = self.dropout(tokens)
 
+        # loop through each encoding block and then return the final set of embedded tokens
         for encode_block in self.encoder_trunk:
             tokens = encode_block(tokens, mask)
 
@@ -100,6 +118,29 @@ class Transformer(nn.Module):
                target: Tensor,
                src_mask : Tensor | None = None,
                trg_mask : Tensor | None = None) -> Tensor:
+        """Decode the embbeded input to a set of logits representing the model's prediction for the
+        most likely token at each position in the batch.
+
+        Args:
+            input_embeddings (Tensor):
+                The matrix of embeddings representing the models embedded understanding
+                of the input seqeunce. Shape : [batch_size x seq_len x model_dimension]
+            target (Tensor):
+                The input_ids of the target tokens. Shape : [batch_size x seq_len]
+            src_mask (Tensor | None, optional):
+                This mask shows which portions of the input embeddings
+                correspond to padding tokens. Shape: [batch_size x 1 x 1 x seq_len].
+                Defaults to None.
+            trg_mask (Tensor | None, optional):
+                This mask stops the model from looking forward at the target tokens, and stops
+                the model from attending to padding tokens
+                Shape: [batch_size x 1 x seq_len x seq_len].
+                Defaults to None.
+
+        Returns:
+            Tensor: A matrix of log probabilities for each target token.
+            Shape: [batch_size x seq_len, target_vocab_size]
+        """
 
         decode_tkns = self.decoder_embedder(target)
         decode_tkns = self.pos_encoding_dec(decode_tkns)
@@ -186,20 +227,6 @@ class Transformer(nn.Module):
             'en' : batched_en,
             'de' : batched_de,
         }
-
-    def decode_to_str(self, tokens : Tensor, lang : str = 'de') -> list[str]:
-
-        if lang == 'de':
-            tokenizer = self.tokenizer_de
-        elif lang == 'en':
-            tokenizer = self.tokenizer_en
-        else:
-            raise ValueError(f'{lang} is not a supported language')
-
-        # TODO: support also non-batch
-        decoded = tokenizer.batch_decode(tokens)
-
-        return decoded
 
     def inference(self, texts_to_translate : List[str], direction : str = 'de_to_en') -> str:
 

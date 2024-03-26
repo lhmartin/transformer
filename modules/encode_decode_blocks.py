@@ -32,7 +32,7 @@ class EncoderBlock(nn.Module):
         self.dropout = nn.Dropout(p=droput_prob)
 
     def forward(self, inputs: Tensor, mask : Tensor | None = None):
-        """Encode using self-attention,
+        """Encode using self-attention.
 
         Args:
             inputs (Tensor): Tensor of shape: [batch_size, seq_len, embedding_size]
