@@ -76,7 +76,7 @@ class Transformer(nn.Module):
         )
 
         self.final_linear = nn.Linear(self._config.model_dimension, self._config.tgt_vocab_size)
-        self.softmax = nn.LogSoftmax(-1)
+        self.log_softmax = nn.LogSoftmax(-1)
         self.dropout = nn.Dropout(self._config.dropout_prob)
 
         self.tokenizer_en = AutoTokenizer.from_pretrained('bert-base-cased')
@@ -86,19 +86,19 @@ class Transformer(nn.Module):
         """Embed the the input sequence using the embedding trunk.
 
         Args:
-            input_sequence (Tensor): Sequence of token ids of shape: [batch_size x seq_len]
+            input_sequence (Tensor): Sequence of token ids of shape: [batch_size , seq_len]
             mask (Tensor | None, optional):
-                Mask of where the padding tokens are shape [batch_size x 1 x 1 x seq_len].
+                Mask of where the padding tokens are shape [batch_size , 1 , 1 , seq_len].
                 It has this shape, because it will be used on the attention matrix.
-                which has shape: [batch_size x num_heads x seq_len x seq_len], so they must match in the
+                which has shape: [batch_size , num_heads , seq_len , seq_len], so they must match in the
                 number of dimensions to be applied to each other.
                 Defaults to None.
 
         Returns:
-            Tensor: A matrix of the embedded sequence. Shape: [batch_size x seq_len x model_dimension]
+            Tensor: A matrix of the embedded sequence. Shape: [batch_size , seq_len , model_dimension]
         """
 
-        # Embed the single ids into learned embeddings: [batch_size x seq_len] -> [batch_size x seq_len x model_dimension]
+        # Embed the single ids into learned embeddings: [batch_size , seq_len] -> [batch_size , seq_len , model_dimension]
         tokens = self.source_embedder(input_sequence) * sqrt(self._config.model_dimension)
 
         # add positional embeddings, these encode the relative positions of the tokens
@@ -124,35 +124,42 @@ class Transformer(nn.Module):
         Args:
             input_embeddings (Tensor):
                 The matrix of embeddings representing the models embedded understanding
-                of the input seqeunce. Shape : [batch_size x seq_len x model_dimension]
+                of the input seqeunce. Shape : [batch_size , seq_len , model_dimension]
             target (Tensor):
-                The input_ids of the target tokens. Shape : [batch_size x seq_len]
+                The input_ids of the target tokens. Shape : [batch_size , seq_len]
             src_mask (Tensor | None, optional):
                 This mask shows which portions of the input embeddings
-                correspond to padding tokens. Shape: [batch_size x 1 x 1 x seq_len].
+                correspond to padding tokens. Shape: [batch_size , 1 , 1 , seq_len].
                 Defaults to None.
             trg_mask (Tensor | None, optional):
                 This mask stops the model from looking forward at the target tokens, and stops
                 the model from attending to padding tokens
-                Shape: [batch_size x 1 x seq_len x seq_len].
+                Shape: [batch_size, 1, seq_len,  seq_len].
                 Defaults to None.
 
         Returns:
             Tensor: A matrix of log probabilities for each target token.
-            Shape: [batch_size x seq_len, target_vocab_size]
+            Shape: [batch_size * seq_len, target_vocab_size]
         """
 
+        # First encode the target tokens into embedings and then add positional encodings
         decode_tkns = self.decoder_embedder(target)
         decode_tkns = self.pos_encoding_dec(decode_tkns)
         decode_tkns = self.dropout(decode_tkns)
 
+        # Pass through each of the decoding blocks
         for decode_block in self.decoder_trunk:
             decode_embeddings = decode_block(decode_tkns, input_embeddings, src_mask, trg_mask)
 
+        # Take the decode embeddings and expand out to the target vocab size
+        # [batch_size, seq_len, model_dimension] -> [batch_size, seq_len, target_vocab_size]
         logits = self.final_linear(decode_embeddings)
 
-        logits = self.softmax(logits)
+        # Take the log softmax over the last dimension, turning the logits in to log probabilities
+        logits = self.log_softmax(logits)
 
+        # reshape from [batch_size, seq_len, target_vocab_size] to [batch_size * seq_len, target_vocab_size]
+        # because this is the expected shape for the loss function.
         return logits.reshape(-1, logits.shape[-1])
 
     def make_target_mask(self, target_tkns : Tensor):
@@ -176,7 +183,21 @@ class Transformer(nn.Module):
 
         return src_mask, trgt_mask
 
-    def forward(self, input_tkns : Tensor, target_tkns : Tensor):
+    def forward(self, input_tkns : Tensor, target_tkns : Tensor) -> Tensor:
+        """Predict the most likely tokens to follow at each position of target_tkns.
+
+        Args:
+            input_tkns (Tensor):
+                A set of input_ids representing the sequence that will be translated from.
+                shape : [batch_size, seq_len]
+            target_tkns (Tensor):
+                A set of input_ids representing of the target sequence.
+                shape : [batch_size, seq_len]
+
+        Returns:
+            Tensor: A matrix of log probabilities for each target token.
+            Shape: [batch_size * seq_len, target_vocab_size]
+        """
 
         src_mask, trg_mask = self.make_masks(input_tkns, target_tkns)
 
@@ -202,10 +223,19 @@ class Transformer(nn.Module):
     def config(self):
         return self._config
 
-    def collate_fn(self, inputs : Dict[str, str]) -> Dict[str, Tensor]:
+    def collate_fn(self, data_dict : Dict[str, str]) -> Dict[str, Tensor]:
+        """Transforms the strings from the dataset into form that is usable by the model.
 
-        en_strs = [sample['translation']['en'] for sample in inputs]
-        de_strs = [sample['translation']['de'] for sample in inputs]
+        Args:
+            inputs (Dict[str, str]):
+                A dictionary containing strings of the input and target sentences.
+
+        Returns:
+            Dict[str, Tensor]: _description_
+        """
+
+        en_strs = [sample['translation']['en'] for sample in data_dict]
+        de_strs = [sample['translation']['de'] for sample in data_dict]
 
         max_length = max([max([len(en) for en in en_strs]), max([len(de) for de in de_strs])])
 
@@ -246,14 +276,7 @@ class Transformer(nn.Module):
         """
         Supports batch (decode multiple source sentences) greedy decoding.
 
-        Decoding could be further optimized to cache old token activations because they can't look ahead and so
-        adding a newly predicted token won't change old token's activations.
-
-        Example: we input <s> and do a forward pass. We get intermediate activations for <s> and at the output at position
-        0, after the doing linear layer we get e.g. token <I>. Now we input <s>,<I> but <s>'s activations will remain
-        the same. Similarly say we now got <am> at output position 1, in the next step we input <s>,<I>,<am> and so <I>'s
-        activations will remain the same as it only looks at/attends to itself and to <s> and so forth.
-
+        Adapted from https://github.com/gordicaleksa/pytorch-original-transformer/tree/d5b29a41c5c3f68e1bcd0c528a58281632fa9d6d
         """
 
         device = next(self.parameters()).device
@@ -298,19 +321,3 @@ class Transformer(nn.Module):
         target_sentences_tokens_post = trg_field_processor.batch_decode(trg_token_ids_batch, skip_special_tokens=True)
 
         return target_sentences_tokens_post
-
-
-if __name__ == "__main__":
-
-    cfg = Transformer.Config(
-        model_dimension=512,
-        src_vocab_size=src_vocab_size,
-        tgt_vocab_size=trg_vocab_size,
-        num_heads=8,
-        num_decoder_blocks=6,
-        num_encoder_blocks=6,
-        dropout_prob=0.1,
-        ff_dim=2048
-    )
-
-    transformer = Transformer(cfg)
