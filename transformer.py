@@ -39,7 +39,6 @@ class Transformer(nn.Module):
         )
 
         self.pos_encoding_enc = SinCosPositionalEmbedding(
-            max_sequence_length=self._config.max_sequence_len,
             model_dimension=self._config.model_dimension
         )
         self.pos_encoding_dec = SinCosPositionalEmbedding(
