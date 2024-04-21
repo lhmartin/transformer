@@ -10,6 +10,8 @@ To use this repo follow these steps:
 2. Clone this repo `git clone git@github.com:lhmartin/transformer.git`
 3. Entry into the directory with `cd transformer`
 4. Install the dependencies with `poetry install`
+5. You can then train using by first entering into your enviroment with `poetry shell` or by running `poetry run` before the call to the training script
+6. To train use: `python train_script.py --config <path_to_config>`
 
 ## What is a Transformer?
 
@@ -19,9 +21,16 @@ A transformer is a model architecture that uses the attention mechanism to draw 
 
 ### Architecture
 
+A transformer consists of two main componenets. The encoder and the decoder. The encoder takes in the full input sequence, in the form of input ids.
+
+
 
 ## The Attention Mechanism
 <img src="imgs/Figure 2 - Scaled Dot Attention and Multi Head.png" alt="Scaled Dot Attention and Multi Head" width="650"/>
+
+
+
+### 
 
 ## Training Task and Data
 

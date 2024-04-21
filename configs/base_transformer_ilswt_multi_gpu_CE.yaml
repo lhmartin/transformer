@@ -1,0 +1,27 @@
+batch_size: 64
+checkpoint_folder: ./transformer_checkpoints/
+checkpoint_steps: 30000
+device: cuda
+learing_rate: 0.5
+logging_freq: 10
+mdl_config:
+  dropout_prob: 0.1
+  ff_dim: 2048
+  key_query_dim: 512
+  max_sequence_len: 128
+  model_dimension: 512
+  num_decoder_blocks: 6
+  num_encoder_blocks: 6
+  num_heads: 8
+  src_vocab_size: 37000
+  tgt_vocab_size: 37000
+  value_dim: 512
+num_epochs: 200
+gpus: [1,2]
+resume_from_ckpt: null
+translation_dir: de_to_en
+val_epoch_freq: 20000
+warmup_steps: 4000
+weight_init: xavier
+loss_fn: cross_entropy
+dataset: ILSWT17
